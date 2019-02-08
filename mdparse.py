@@ -603,7 +603,10 @@ class SimulationOptions(object):
         #===            ====            ====            ====            ====      ===#
 
         #=== Input and files ===#
-        self.set_active('topdir','/home/kshen/lib/ff',str,"for gromacs.GROMACS_TOPDIR")
+        #gromacsdir = '/home/kshen/lib/ff'
+        mypath = os.path.abspath(__file__)
+        gromacsdir = mypath.split('MDtools')[0]+'ff' 
+        self.set_active('topdir',gromacsdir,str,"for gromacs.GROMACS_TOPDIR")
         self.set_active('topfile','system.top',str,"Gromacs system.top file")
         self.set_active('grofile','box.gro',str,"Gromacs .gro file, we just use for box")
 

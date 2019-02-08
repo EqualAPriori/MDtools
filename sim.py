@@ -1,3 +1,16 @@
+################################################################
+# Kevin Shen, 2019                                             #
+# kevinshen@ucsb.edu                                           #
+#                                                              #
+# General purpose openMM simulation script.                    #
+# Allows for (verlet, langevin); barostats; LJPME              #
+# simulation protocol:                                         #
+#   1) equilibrate                                             #
+#   2) production run                                          #
+#                                                              #
+################################################################
+
+
 # System stuff
 from sys import stdout
 import time

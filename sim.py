@@ -281,7 +281,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     else:
         # Set initial positions.
         if incoord.split(".")[1]=="pdb":
-            pdb = pmd.load_file(incoord)
+            pdb = app.PDBFile(incoord) #pmd.load_file(incoord)
             simulation.context.setPositions(pdb.positions)
         elif incoord.split(".")[1]=="xml":
             simulation.loadState(incoord)

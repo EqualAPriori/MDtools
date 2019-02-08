@@ -561,7 +561,7 @@ class SimulationOptions(object):
             out += Unrecognized
         return out
 
-    def __init__(self, input_file, overrides, pdbfnm=''):
+    def __init__(self, input_file, overrides={}, pdbfnm=''):
         super(SimulationOptions,self).__init__()
         #basename = os.path.splitext(pdbfnm)[0] #2019.01.31 Removed fancy appending of basename to default outputs
         basename = ''

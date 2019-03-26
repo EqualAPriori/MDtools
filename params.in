@@ -1,42 +1,43 @@
 #Parameters for the simulation
-outpdb				output.pdb		# (str)	  output pdb file
-outnetcdf			output.nc		# (str)   output netcdf file
-topfile				system5.3.N18.top	# (str)   Gromacs topology file
-grofile				box5.3air.gro		# (str)   Gromacs .gro file
-incoord				monolayer18.pdb	# (str)   input file to resume coordinates from
-cont                            1              	# (int)   continuation number
+outpdb				output.pdb		    # (str)	  output pdb file
+outnetcdf			output.nc		    # (str)   output netcdf file
+topfile				system.top	        # (str)   Gromacs topology file
+grofile				box.gro	            # (str)   Gromacs .gro file
+incoord				SDSb5n__N__.pdb       	# (str)   input file to resume coordinates from
+cont                0              	    # (int)   continuation number
 #
 # system settings
 #
-temperature			298.0		# (float) temperature (K)
-gentemp                           0.0           # (float) velocity initialization temperature
-integrator                      langevin        # (str)   verlet, langevin
-collision_rate                  2.0             # (float) for langevin, this is the friction. units of 1/ps
-pressure			0.0		# (float) bar  
-nbarostat                       25              # (int)   
+temperature                 298.0		# (float) temperature (K)
+gentemp                     0.0         # (float) velocity initialization temperature
+integrator                  langevin    # (str)   verlet, langevin
+collision_rate              2.0         # (float) for langevin, this is the friction. units of 1/ps
+pressure                    1.0         # (float) bar  
+nbarostat                   25          # (int)   
 #
 # forcefield settings
 #
-nonbonded_method			LJPME	# (str)  "NoCutoff","CutoffNonPeriodic","CutoffPeriodic","Ewald","PME","LJPME"
-nonbonded_cutoff			1.2	# (float) nonbonded cutoff, in nmi
-dispersion_correction		False		# (bool)  Isotropic long-range dispersion correction for periodic systems
+nonbonded_method			PME	        # (str)  "NoCutoff","CutoffNonPeriodic","CutoffPeriodic","Ewald","PME","LJPME"
+nonbonded_cutoff			1.2	        # (float) nonbonded cutoff, in nmi
+dispersion_correction		True		# (bool)  Isotropic long-range dispersion correction for periodic systems
 ewald_error_tolerance		0.0001		# (float) Error tolerance for Ewald, PME, LJPME. Don't go below 5e-5 for PME unless double precision
-constraints			HBonds		# (float) None,"HBonds","AllBonds","HAngles"
-constraint_tolerance            1e-5            # (float) Constraint tolerance. P. Eastman suggests 1e-5. Have seen up to 1e-12
-rigid_water			True		# (bool)
+constraints			        HBonds		# (float) None,"HBonds","AllBonds","HAngles"
+constraint_tolerance        1e-5        # (float) Constraint tolerance. P. Eastman suggests 1e-5. Have seen up to 1e-12
+rigid_water                 True		# (bool)
 #
 # protocol/runtime
 #
 minimize                        False 		# (bool)   Specify whether to minimize the energy before running dynamics.
-use_fs_interval                 True            # (bool)   Whether or not to use my convention of giving #fs per report instead of by timestep
-timestep                                0.5 # (float)  Time step in femtoseconds.
-equilibrate                           20000 # (int)    Number of steps reserved for equilibration.
-block_interval                      1000000 # (int)    number of steps per block. will write pdb after each block for inspection.
-nblocks                                 100 # (int)    number of simulation blocks
+use_fs_interval                 True        # (bool)   Whether or not to use my convention of giving #fs per report instead of by timestep
+timestep                                1.0 # (float)  Time step in femtoseconds.
+equilibrate                         1000000 # (int)    Number of steps reserved for equilibration.
+block_interval                      1000000 # (int)    fs, number of steps per block. will write pdb after each block for inspection.
+nblocks                                  50 # (int)    number of simulation blocks
 report_interval                        1000 # (int)    fs, Number of steps between every progress report.
 checkpoint_interval                  100000 # (int)    fs, between checkpoints
-pdb_report_interval                  100000 # (int)    fs, Specify a timestep interval for PDB reporter.
-netcdf_report_interval                10000 # (int)    fs, Specify a timestep interval for DCD reporter.
+pdb_report_interval                       0 # (int)    fs, Specify a timestep interval for PDB reporter.
+dcd_report_interval                   10000 # (int)    fs, SPecify a timestep interval for DCD reporter
+netcdf_report_interval                    0 # (int)    fs, Specify a timestep interval for netcdf reporter.
 netcdf_vels			      False # (bool)   whether or not to write velocities to netcdf
 netcdf_frcs			      False # (bool)   whether or nto to write velocities to netcdf
 #

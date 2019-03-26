@@ -34,7 +34,7 @@ from parmed import gromacs
 from parmed.openmm.reporters import NetCDFReporter
 from parmed import unit as u
 import parmed as pmd
-#import mdtraj
+import mdtraj
 
 # Custom Tools
 import mdparse
@@ -111,6 +111,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     incoord         = args.incoord
     out_pdb         = args.outpdb
     out_netcdf      = args.outnetcdf
+    molecTopology   = 'topology.pdb'
+    out_nowater     = 'output_nowater.nc'
     logfile         = args.logfile
     checkpointxml   = args.chkxml
     checkpointpdb   = args.chkpdb
@@ -280,11 +282,17 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         print("Currently is filler")
     else:
         # Set initial positions.
-        if incoord.split(".")[1]=="pdb":
+        if incoord.split(".")[-1]=="pdb":
             pdb = app.PDBFile(incoord) #pmd.load_file(incoord)
             simulation.context.setPositions(pdb.positions)
-        elif incoord.split(".")[1]=="xml":
+            print('Set positions from pdb, {}'.format(incoord))
+            molecTopology = incoord
+        elif incoord.split(".")[-1]=="xyz":
+            traj = mdtraj.load(incoord, top = mdtraj.Topology.from_openmm(simulation.topology))
+            simulation.context.setPositions( traj.openmm_positions(0) )
+        elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
+            print('Set positions from xml, {}'.format(incoord))
         else:
             logger.info("Error, can't handle input coordinate filetype")
             
@@ -355,6 +363,15 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         mdparse.bak(out_netcdf)
         logger.info("netcdf Reporter will write to %s every %i steps" %(out_netcdf, netcdffreq))
         simulation.reporters.append(NetCDFReporter(out_netcdf, netcdffreq, crds=True, vels=args.netcdf_vels, frcs=args.netcdf_frcs))
+
+        mdparse.bak(out_nowater)
+        logger.info("netcdf Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater,netcdffreq))
+        #toptraj = mdtraj.load(molecTopology)
+        #top = toptraj.top
+        top = mdtraj.Topology.from_openmm(simulation.topology)
+        sel = [atom.index for residue in top.residues for atom in residue.atoms if (residue.name!="SOL") and (residue.name!="HOH")]
+        simulation.reporters.append(mdtraj.reporters.NetCDFReporter(out_nowater, netcdffreq, atomSubset = sel))
+
 
     if args.checkpoint_interval > 0: 
        simulation.reporters.append(app.CheckpointReporter(checkpointchk, checkfreq))

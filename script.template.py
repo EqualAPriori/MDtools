@@ -1,4 +1,4 @@
-# Template for writing a python script
+# 2019.03 Template for writing a python script.
 import numpy as np
 import sys
 import os

@@ -639,8 +639,11 @@ class SimulationOptions(object):
         self.set_active('netcdf_vels',False,bool,"Include velocities in netcdf")
         self.set_active('netcdf_frcs',False,bool,"Include forces in netcdf")
 
+        self.set_active('dcd_report_interval',0,int,"Specify a timestep interval for DCD reporter.")
+
         self.set_active('outpdb','output.pdb',str,"output pdb file", depend=self.pdb_report_interval>0)
         self.set_active('outnetcdf','output.nc',str,"output netcdf file", depend=self.netcdf_report_interval>0)
+        self.set_active('outdcd','output.dcd',str,"output dcd file", depend=self.dcd_report_interval>0)
         self.set_active('logfile','thermo.log',str,"log file")
 
         self.set_active('checkpoint',True,bool,"Flag for turning on checkpoints")

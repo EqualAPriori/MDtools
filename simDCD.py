@@ -23,6 +23,7 @@ formatter = logging.Formatter(fmt='%(asctime)s - %(message)s', datefmt="%H:%M:%S
 sh.setFormatter(formatter)
 import argparse
 from collections import namedtuple, defaultdict, OrderedDict
+import numpy as np
 
 # OpenMM Imports
 import simtk.openmm as mm
@@ -220,8 +221,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     else:
         logger.info("Using the default (fastest) device, or not using CUDA nor OpenCL")
 
-    if "CudaPrecision" in platform.getPropertyNames() and (platform.getName()=="OpenCL" or platform.getName()=="CUDA"):
-        platform.setPropertyDefaultValue("CudaPrecision", args.cuda_precision)
+    if "Precision" in platform.getPropertyNames() and (platform.getName()=="OpenCL" or platform.getName()=="CUDA"):
+        platform.setPropertyDefaultValue("Precision", args.cuda_precision)
     else:
         logger.info("Not setting precision")
         args.deactivate("cuda_precision",msg="Platform does not support setting cuda_precision.")
@@ -248,10 +249,25 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation = app.Simulation(top.topology, system, integrator, platform)
     else:
         simulation = app.Simulation(top.topology, system, integrator)
+    topomm = mdtraj.Topology.from_openmm(simulation.topology)
+    logger.info("System topology: {}".format(topomm))
 
 
     #print platform we're using
     mdparse.printcool_dictionary({i:simulation.context.getPlatform().getPropertyValue(simulation.context,i) for i in simulation.context.getPlatform().getPropertyNames()},title="Platform %s has properties:" % simulation.context.getPlatform().getName())
+
+
+    logger.info("--== PME parameters ==--")
+    ftmp = [f for ii, f in enumerate(simulation.system.getForces()) if isinstance(f,mm.NonbondedForce)]
+    fnb = ftmp[0]   
+    PMEparam = fnb.getPMEParametersInContext(simulation.context)
+    logger.info(fnb.getPMEParametersInContext(simulation.context))
+    #nmeshx = int(PMEparam[1]*1.5)
+    #nmeshy = int(PMEparam[2]*1.5)
+    #nmeshz = int(PMEparam[3]*1.5)
+    #fnb.setPMEParameters(PMEparam[0],nmeshx,nmeshy,nmeshz)
+    #logger.info(fnb.getPMEParametersInContext(simulation.context))
+
 
     # Print out some more information about the system
     logger.info("--== System Information ==--")
@@ -287,7 +303,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         print(p.getPropertyValue(simulation.context,'DeviceName'))
         print("Device Index: {}".format(p.getPropertyValue(simulation.context,'DeviceIndex')))
 
-    
+
     if os.path.exists(args.restart_filename) and args.read_restart:
         print("Restarting simulation from the restart file.")
         print("Currently is filler")
@@ -386,7 +402,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation.reporters.append(mdtraj.reporters.DCDReporter(out_dcd, dcdfreq))
 
         mdparse.bak(out_nowater_dcd)
-        logger.info("netcdf Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
+        logger.info("dcd Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
         #toptraj = mdtraj.load(molecTopology)
         #top = toptraj.top
         top = mdtraj.Topology.from_openmm(simulation.topology)
@@ -424,10 +440,6 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
         app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
-        if args.dcd_report_interval > 0:
-            app.PDBFile.writeFile(top2omm, positions[sel,:], open('output_nowater_chk.pdb', 'w')) 
-            #traj2 = mdtraj.Trajectory(positions[sel,:],topology=top2)
-            #traj2.save('output_nowater_chk.pdb')
 #END main()
 
 

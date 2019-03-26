@@ -285,8 +285,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation = app.Simulation(top.topology, system, integrator, platform)
     else:
         simulation = app.Simulation(top.topology, system, integrator)
-    mdtrajtop = mdtraj.Topology.from_openmm(simulation.topology)
-    topdf = mdtrajtop.to_dataframe()   
+    topomm = mdtraj.Topology.from_openmm(simulation.topology)
+    logger.info("System topology: {}".format(topomm))
+
 
     #print platform we're using
     mdparse.printcool_dictionary({i:simulation.context.getPlatform().getPropertyValue(simulation.context,i) for i in simulation.context.getPlatform().getPropertyNames()},title="Platform %s has properties:" % simulation.context.getPlatform().getName())
@@ -339,7 +340,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         print(p.getPropertyValue(simulation.context,'DeviceName'))
         print("Device Index: {}".format(p.getPropertyValue(simulation.context,'DeviceIndex')))
 
-    
+
     if os.path.exists(args.restart_filename) and args.read_restart:
         print("Restarting simulation from the restart file.")
         print("Currently is filler")
@@ -454,8 +455,13 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         top = mdtraj.Topology.from_openmm(simulation.topology)
         sel = [atom.index for residue in top.residues for atom in residue.atoms if (residue.name!="SOL") and (residue.name!="HOH")]
         simulation.reporters.append(mdtraj.reporters.DCDReporter(out_nowater_dcd, dcdfreq, atomSubset = sel))
-        
 
+        #write out a nowater.pdb as topology input
+        top2 = top.subset(sel)
+        xyz0 = np.zeros([len(sel),3])
+        traj2 = mdtraj.Trajectory(xyz0,topology=top2)
+        traj2.save('output_nowater_top.pdb')
+        top2omm = top2.to_openmm()
 
     if args.checkpoint_interval > 0: 
        simulation.reporters.append(app.CheckpointReporter(checkpointchk, checkfreq))
@@ -479,11 +485,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         logger.info('Took {} seconds for block {}'.format(end-start,iblock))
 
         simulation.saveState(checkpointxml)
-        state = simulation.context.getState(getPositions=True)
-        positions = state.getPositions()
-        #app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w'))    
-        #dcdfile = app.DCDFile( open(checkpointdcd,'w'), topology=simulation.topology, dt=1)
-        #app.DCDFile.writeModel(positions, periodicBoxVectors=state.getPeriodicBoxVectors())
+        positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+        app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
 #END main()
 
 

@@ -427,6 +427,8 @@ def main(targetVol, tol=1e-4, paramfile='params.in', overrides={}, quiktest=Fals
             box_vectors = simulation.context.getState().getPeriodicBoxVectors()
             volume = mdparse.compute_volume(box_vectors) / u.nanometer**3
             print("Volume is {}, targeting {}".format(volume, targetVol))
+            with open("finalL.txt",'w') as f:
+                f.write("{}".format(volume**(1.0/3.0)))
         err = abs(volume - targetVol)/targetVol
         iblock = iblock+1
     
@@ -434,6 +436,8 @@ def main(targetVol, tol=1e-4, paramfile='params.in', overrides={}, quiktest=Fals
     simulation.saveState(checkpointxml)
     positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
     app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w'))    
+
+    
 #END main()
 
 

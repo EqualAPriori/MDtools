@@ -703,7 +703,7 @@ class SimulationOptions(object):
         #=== Platform ===#
         self.set_active('platform',"CUDA",str,"The simulation platform.", allowed=["Reference","CUDA","OpenCL"])
         self.set_active('cuda_precision','single',str,"The precision of the CUDA platform.", allowed=["single","mixed","double"],
-                        depend=(self.platform == "CUDA"), msg="The simulation platform needs to be set to CUDA")
+                        depend=(self.platform == "CUDA" or self.platform=="OpenCL"), msg="The simulation platform needs to be set to CUDA")
         self.set_active('device',None,int,"Specify the device (GPU) number; will default to the fastest available.", depend=(self.platform in ["CUDA", "OpenCL"]), msg="The simulation platform needs to be set to CUDA or OpenCL")
 
         #=== Check if User input Something that's not used ===#

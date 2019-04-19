@@ -214,8 +214,11 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         if device != None:
             logger.info("Setting Device to %s" % str(device))
             #platform.setPropertyDefaultValue("CudaDevice", device)
-            platform.setPropertyDefaultValue("CudaDeviceIndex", device)
-            #platform.setPropertyDefaultValue("OpenCLDeviceIndex", device)
+            if platform.getName()=="CUDA":
+                platform.setPropertyDefaultValue("CudaDeviceIndex", device)
+            elif platform.getName()=="OpenCL":
+                print("set OpenCL device to {}".format(device))
+                platform.setPropertyDefaultValue("OpenCLDeviceIndex", device)
         else:
             logger.info("Using the default (fastest) device")
     else:

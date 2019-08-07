@@ -7,7 +7,8 @@
 # simulation protocol:                                         #
 #   1) equilibrate                                             #
 #   2) production run                                          #
-#                                                              #
+# uses pickling to facilitate loading large topologies.        #
+# also outputs PME parameters & disables PME stream as suggested #
 ################################################################
 
 
@@ -376,9 +377,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         if args.minimize:
             start = time.time()
             maxIter=20
-            logger.info("Minimization start, the energy is:", simulation.context.getState(getEnergy=True).getPotentialEnergy())
+            logger.info("Minimization start, the energy is: {}", simulation.context.getState(getEnergy=True).getPotentialEnergy())
             simulation.minimizeEnergy(maxIterations=maxIter)
-            logger.info("Minimization done, the energy is", simulation.context.getState(getEnergy=True).getPotentialEnergy())
+            logger.info("Minimization done, the energy is: {}", simulation.context.getState(getEnergy=True).getPotentialEnergy())
             positions = simulation.context.getState(getPositions=True).getPositions()
             logger.info("Minimized geometry is written to 'minimized.pdb'")
             app.PDBFile.writeModel(simulation.topology, positions, open('minimized.pdb','w'))

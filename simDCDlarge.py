@@ -246,8 +246,11 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         if device != None:
             logger.info("Setting Device to %s" % str(device))
             #platform.setPropertyDefaultValue("CudaDevice", device)
-            platform.setPropertyDefaultValue("CudaDeviceIndex", device)
-            #platform.setPropertyDefaultValue("OpenCLDeviceIndex", device)
+            if platform.getName()=="CUDA":
+                platform.setPropertyDefaultValue("CudaDeviceIndex", device)
+            elif platform.getName()=="OpenCL":
+                print("set OpenCL device to {}".format(device))
+                platform.setPropertyDefaultValue("OpenCLDeviceIndex", device)
         else:
             logger.info("Using the default (fastest) device")
     else:
@@ -449,7 +452,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         #simulation.reporters.append(mdtraj.reporters.DCDReporter(out_dcd, dcdfreq))
 
         mdparse.bak(out_nowater_dcd)
-        logger.info("netcdf Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
+        logger.info("dcd Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
         #toptraj = mdtraj.load(molecTopology)
         #top = toptraj.top
         top = mdtraj.Topology.from_openmm(simulation.topology)

@@ -11,4 +11,5 @@ print("Log file name \t {}".format(args.file))
 
 data = np.loadtxt(args.file, skiprows=1, delimiter=",")
 
+plt.plot(data[:,0],data[:,1]);plt.show()
 

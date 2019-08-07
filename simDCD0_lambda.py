@@ -4,10 +4,11 @@
 #                                                              #
 # General purpose openMM simulation script.                    #
 # Allows for (verlet, langevin); barostats; LJPME              #
+# Adds Uext potential
 # simulation protocol:                                         #
 #   1) equilibrate                                             #
 #   2) production run                                          #
-#                                                              #
+#Doesn't write no-water config, unlike simDCD.py               #
 ################################################################
 
 
@@ -22,14 +23,17 @@ sh = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter(fmt='%(asctime)s - %(message)s', datefmt="%H:%M:%S")
 sh.setFormatter(formatter)
 import argparse
+import alchemify
 from collections import namedtuple, defaultdict, OrderedDict
 import numpy as np
 
 # OpenMM Imports
 import simtk.openmm as mm
 import simtk.openmm.app as app
+import simtk.unit as unit
 
 # ParmEd & MDTraj Imports
+import parmed.openmm
 from parmed import gromacs
 #gromacs.GROMACS_TOPDIR = "/home/kshen/SDS"
 from parmed.openmm.reporters import NetCDFReporter
@@ -89,7 +93,7 @@ def set_thermo(system,args):
     return integrator
 
 
-def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
+def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, soluteRes=0,lambdaLJ=1.0,lambdaQ=1.0): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
     # === PARSE === #
     args = mdparse.SimulationOptions(paramfile, overrides)
     
@@ -159,6 +163,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     gro = gromacs.GromacsGroFile.parse(box_file)
     top.box = gro.box
     logger.info("Took {}s to create topology".format(time.time()-start))
+    print(top)
 
     constr = {None: None, "None":None,"HBonds":app.HBonds,"HAngles":app.HAngles,"AllBonds":app.AllBonds}[args.constraints]   
     start = time.time()
@@ -180,11 +185,49 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         fnb.setUseDispersionCorrection(False)
         logger.info("Check dispersion flag: {}".format(fnb.getUseDispersionCorrection()) )
 
+    # --- execute custom forcefield code ---
+    """
+    if customff:
+        logger.info("Using customff: [{}]".format(customff))
+        with open(customff,'r') as f:
+            ffcode = f.read()
+        exec(ffcode,globals(),locals()) #python 3, need to pass in globals to allow exec to modify them (i.e. the system object)
+        #print(sys.path)
+        #sys.path.insert(1,'.')
+        #exec("import {}".format(".".join(customff.split(".")[:-1])))
+    else:
+        logger.info("--- No custom ff code provided ---")
 
+    fExts=[f for f in system.getForces() if isinstance(f,mm.CustomExternalForce)]
+    logger.info("External forces added: {}".format(fExts))
+    """
+    soluteIndices = []
+    soluteResidues = [soluteRes] #list of residues to alchemify
+    #parmed gromacs topology
+    for ir,res in enumerate(top.residues):
+        if ir in soluteResidues:
+            for atom in res.atoms:
+                soluteIndices.append(atom.idx)
+    print("Solute residue: {}".format([top.residues[ir].atoms for ir in soluteResidues]))
+    print("Solute Indices: {}".format(soluteIndices))
+    #if using openmm topology. unfortunately don't know how to convert from parmed to openmm#:
+    #topology = parmed.openmm.load_topology(top.topology)
+    #print(type(topology))
+    #for ir,res in topology.residues():
+    #    if ir in soluteResidues:
+    #        for atom in res.atoms:
+    #            soluteIndices.append(atom.index)
+
+    alch = alchemify.alchemist(system,lambdaLJ,lambdaQ)
+    alch.setupSolute(soluteIndices)
+    print(system.getForces())
+    
+
+    
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
 
-    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigid_water == False):
+    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigidwater == False):
         args.deactivate('constraint_tolerance',"There are no constraints in this system")
     else:
         logger.info("Setting constraint tolerance to %.3e" % args.constraint_tolerance)
@@ -264,8 +307,12 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     logger.info("--== PME parameters ==--")
     ftmp = [f for ii, f in enumerate(simulation.system.getForces()) if isinstance(f,mm.NonbondedForce)]
     fnb = ftmp[0]   
-    PMEparam = fnb.getPMEParametersInContext(simulation.context)
-    logger.info(fnb.getPMEParametersInContext(simulation.context))
+    if fnb.getNonbondedMethod() == 4: #check for PME
+        PMEparam = fnb.getPMEParametersInContext(simulation.context)
+        logger.info(fnb.getPMEParametersInContext(simulation.context))
+    if fnb.getNonbondedMethod() == 5: #check for LJPME
+        PMEparam = fnb.getLJPMEParametersInContext(simulation.context)
+        logger.info(fnb.getLJPMEParametersInContext(simulation.context))
     #nmeshx = int(PMEparam[1]*1.5)
     #nmeshy = int(PMEparam[2]*1.5)
     #nmeshz = int(PMEparam[3]*1.5)
@@ -339,9 +386,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
 
         # Minimize the energy.
         if args.minimize:
-            logger.info("Minimization start, the energy is:", simulation.context.getState(getEnergy=True).getPotentialEnergy())
+            logger.info("Minimization start, the energy is: {}".format(simulation.context.getState(getEnergy=True).getPotentialEnergy()))
             simulation.minimizeEnergy()
-            logger.info("Minimization done, the energy is", simulation.context.getState(getEnergy=True).getPotentialEnergy())
+            logger.info("Minimization done, the energy is {}".format(simulation.context.getState(getEnergy=True).getPotentialEnergy()))
             positions = simulation.context.getState(getPositions=True).getPositions()
             logger.info("Minimized geometry is written to 'minimized.pdb'")
             app.PDBFile.writeModel(simulation.topology, positions, open('minimized.pdb','w'))
@@ -396,7 +443,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         mdparse.bak(out_netcdf)
         logger.info("netcdf Reporter will write to %s every %i steps" %(out_netcdf, netcdffreq))
         simulation.reporters.append(NetCDFReporter(out_netcdf, netcdffreq, crds=True, vels=args.netcdf_vels, frcs=args.netcdf_frcs))
-
+        '''
         mdparse.bak(out_nowater)
         logger.info("netcdf Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater,netcdffreq))
         #toptraj = mdtraj.load(molecTopology)
@@ -404,12 +451,12 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         top = mdtraj.Topology.from_openmm(simulation.topology)
         sel = [atom.index for residue in top.residues for atom in residue.atoms if (residue.name!="SOL") and (residue.name!="HOH")]
         simulation.reporters.append(mdtraj.reporters.NetCDFReporter(out_nowater, netcdffreq, atomSubset = sel))
-
+        '''
     if args.dcd_report_interval > 0:
         mdparse.bak(out_dcd)
         logger.info("dcd Reporter will write to %s every %i steps" %(out_dcd, dcdfreq))
         simulation.reporters.append(mdtraj.reporters.DCDReporter(out_dcd, dcdfreq))
-
+        '''
         mdparse.bak(out_nowater_dcd)
         logger.info("dcd Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
         #toptraj = mdtraj.load(molecTopology)
@@ -424,7 +471,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         traj2 = mdtraj.Trajectory(xyz0,topology=top2)
         traj2.save('output_nowater_top.pdb')
         top2omm = top2.to_openmm()
-
+        '''
     if args.checkpoint_interval > 0: 
        simulation.reporters.append(app.CheckpointReporter(checkpointchk, checkfreq))
     #simulation.reporters.append(app.DCDReporter(out_dcd, writefreq))
@@ -449,6 +496,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
         app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+
 #END main()
 
 
@@ -457,6 +505,11 @@ if __name__ == "__main__":
     parser.add_argument("paramfile", default='params.in', type=str, help="param.in file")
     parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
     parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
+    parser.add_argument("-soluteRes", type=int, help="Solute residue index to alchemify")
+    parser.add_argument("-lambdaLJ", type=float, default=1.0, help="lamdaLJ coupling, default 1.0")
+    parser.add_argument("-lambdaQ", type=float, default=1.0, help="lamdaQ coupling, default 1.0")
+    
+    #parser.add_argument("--customff", default="", type=str, help="Custom force field python script to run after generating system")
     #parser.add_argument("simtime", type=float, help="simulation runtime (ns)")
     #parser.add_argument("Temp", type=float, help="system Temperature")
     #parser.add_argument("--NPT", action="store_true", help="NPT flag")
@@ -497,7 +550,7 @@ if __name__ == "__main__":
     '''
 
     # === RUN === #
-    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport)
+    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, soluteRes=cmdln_args.soluteRes, lambdaLJ=cmdln_args.lambdaLJ, lambdaQ=cmdln_args.lambdaQ)
 
 #End __name__
 

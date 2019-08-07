@@ -7,7 +7,7 @@
 # simulation protocol:                                         #
 #   1) equilibrate                                             #
 #   2) production run                                          #
-#                                                              #
+#Doesn't write no-water config, unlike simDCD.py               #
 ################################################################
 
 
@@ -159,6 +159,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     gro = gromacs.GromacsGroFile.parse(box_file)
     top.box = gro.box
     logger.info("Took {}s to create topology".format(time.time()-start))
+    print(top)
 
     constr = {None: None, "None":None,"HBonds":app.HBonds,"HAngles":app.HAngles,"AllBonds":app.AllBonds}[args.constraints]   
     start = time.time()
@@ -184,7 +185,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
 
-    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigid_water == False):
+    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigidwater == False):
         args.deactivate('constraint_tolerance',"There are no constraints in this system")
     else:
         logger.info("Setting constraint tolerance to %.3e" % args.constraint_tolerance)
@@ -396,7 +397,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         mdparse.bak(out_netcdf)
         logger.info("netcdf Reporter will write to %s every %i steps" %(out_netcdf, netcdffreq))
         simulation.reporters.append(NetCDFReporter(out_netcdf, netcdffreq, crds=True, vels=args.netcdf_vels, frcs=args.netcdf_frcs))
-
+        '''
         mdparse.bak(out_nowater)
         logger.info("netcdf Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater,netcdffreq))
         #toptraj = mdtraj.load(molecTopology)
@@ -404,12 +405,12 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         top = mdtraj.Topology.from_openmm(simulation.topology)
         sel = [atom.index for residue in top.residues for atom in residue.atoms if (residue.name!="SOL") and (residue.name!="HOH")]
         simulation.reporters.append(mdtraj.reporters.NetCDFReporter(out_nowater, netcdffreq, atomSubset = sel))
-
+        '''
     if args.dcd_report_interval > 0:
         mdparse.bak(out_dcd)
         logger.info("dcd Reporter will write to %s every %i steps" %(out_dcd, dcdfreq))
         simulation.reporters.append(mdtraj.reporters.DCDReporter(out_dcd, dcdfreq))
-
+        '''
         mdparse.bak(out_nowater_dcd)
         logger.info("dcd Reporter will write a no-water coordinate file %s every %i steps" %(out_nowater_dcd, dcdfreq))
         #toptraj = mdtraj.load(molecTopology)
@@ -424,7 +425,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         traj2 = mdtraj.Trajectory(xyz0,topology=top2)
         traj2.save('output_nowater_top.pdb')
         top2omm = top2.to_openmm()
-
+        '''
     if args.checkpoint_interval > 0: 
        simulation.reporters.append(app.CheckpointReporter(checkpointchk, checkfreq))
     #simulation.reporters.append(app.DCDReporter(out_dcd, writefreq))

@@ -230,11 +230,11 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     print(system.getForces())
     
 
-    
+
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
 
-    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigidwater == False):
+    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigid_water == False):
         args.deactivate('constraint_tolerance',"There are no constraints in this system")
     else:
         logger.info("Setting constraint tolerance to %.3e" % args.constraint_tolerance)

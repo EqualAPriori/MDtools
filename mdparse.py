@@ -678,6 +678,12 @@ class SimulationOptions(object):
         self.set_active('pressure',0.0,float,"Simulation pressure; set a positive number to activate.",
                         clash=(self.temperature <= 0.0),
                         msg="For constant pressure simulations, the temperature must be finite")
+        self.set_active('tension',0.0,float,"Simulation surface tension; set a positive number to activate Monte Carlo membrane Barostat. Must have pressure > 0 as well. units bar*nm",
+                        clash=(self.temperature <= 0.0),
+                        msg="For constant tension simulations, the temperature must be finite and pressure > 0")
+        self.set_active('zmode',0,int,"Z(long)-axis mode. 0:Z-free, 1: Z-fixed, 2:Z-changed proportionally to maintain constant volume.",
+                        allowed=[0,1,2],clash=(self.temperature <= 0.0),
+                        msg="For constant tension simulations, the temperature must be finite and pressure > 0")
         self.set_active('anisotropic',False,bool,"Set to True for anisotropic box scaling in NPT simulations",
                         depend=("pressure" in self.ActiveOptions and self.pressure > 0.0), msg = "We're not running a constant pressure simulation")
         self.set_active('nbarostat',25,int,"Step interval for MC barostat volume adjustments.",

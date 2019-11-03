@@ -44,11 +44,11 @@ def decideColumn(filehandler,observablename):
         sys.stderr.write("\nError: instruction to detect column from observable name. No valid header in file.\n")
         sys.exit(1)
 
-def extractData(filehandler,column,warmup):
+def extractData(filehandler,column,warmup,delimiter=None):
     # Be sure we're at the beginning of the file
     filehandler.seek(0)
     # Read the file - First get all of the data
-    AllData=np.loadtxt(filehandler)
+    AllData=np.loadtxt(filehandler, delimiter=delimiter)
     # Copy to a 1D Numpy array for faster analysis
     Data1=AllData[:,column]
     # Check for NaN in the data
@@ -173,13 +173,13 @@ def doStats(warmupdata,Data,doGraphs=False,doWriteStdout=False,graphFilenameStub
     return (nsamples,(min,max),mean,semcc,kappa,unbiasedvar,autocor)
 
 
-def autoWarmupMSER(filehandler, col, debug=False):
+def autoWarmupMSER(filehandler, col, debug=False, delimiter=None):
     # Algorithm:
     # - Load all data
     # - Compute SEM with d samples truncated from beginning. The samples are supposed to be batch-averaged. This will be the case in most simulation data anyway.
     # - Find the value of d that minimizes SEM. This is the warmup length.
     filehandler.seek(0)
-    dummy, data = extractData(filehandler, col, 0)
+    dummy, data = extractData(filehandler, col, 0, delimiter=delimiter)
 
     # MSER-5 - pre-block-average the data in chunks of 5 steps, and truncate integer counts of those steps
     m = 5 # Block size
@@ -244,6 +244,7 @@ if __name__ == "__main__":
   parser.add_argument('-a','--autowarmup',default=False,dest='autowarmup',action='store_true',help='Use MSER-5 method to automate warmup detection')
   parser.add_argument('-w', '--warmup',default=100,type=int,help='Number of samples to eliminate from the beginning of the data.')
   parser.add_argument('-q','--quiet',default=False,dest='quiet',action='store_true',help='Write minimal information to stdout')
+  parser.add_argument('-d','--delimiter',default=None,dest='delimiter',help='delimiter, default is None (uses numpy default, whitespace)')
   # Parse the command-line arguments
   #args=parser.parse_args(sys.argv[1:])
   args=parser.parse_args()
@@ -264,11 +265,11 @@ if __name__ == "__main__":
       if not args.quiet:
         print "Processing column index {0}".format(i)
       if args.autowarmup:
-          warmup,Data,nwarmup = autoWarmupMSER(args.file, i)
+          warmup,Data,nwarmup = autoWarmupMSER(args.file, i, delimiter=args.delimiter)
           if not args.quiet:
             print "Auto warmup detection with MSER-5 => ",nwarmup
       else:
-          warmup,Data = extractData(args.file, i, args.warmup)
+          warmup,Data = extractData(args.file, i, args.warmup, delimiter=args.delimiter)
       # Do the statistics - if command line, force stdout output
       (nsamples,(min,max),mean,semcc,kappa,unbiasedvar,autocor)=doStats(warmup,Data,args.graphs,not args.quiet,'_{0}_col{1}'.format(args.file.name,i))
       means.append(mean)
@@ -279,11 +280,11 @@ if __name__ == "__main__":
         print "Processing observable {0}".format(i)
       column = decideColumn(args.file,i)
       if args.autowarmup:
-          warmup,Data,nwarmup = autoWarmupMSER(args.file, column)
+          warmup,Data,nwarmup = autoWarmupMSER(args.file, column, delimiter=args.delimiter)
           if not args.quiet:
             print "Auto warmup detection with MSER-5 => ",nwarmup
       else:
-          warmup,Data = extractData(args.file, column, args.warmup)
+          warmup,Data = extractData(args.file, column, args.warmup, delimiter=args.delimiter)
       # Do the statistics - if command line, force stdout output
       (nsamples,(min,max),mean,semcc,kappa,unbiasedvar,autocor)=doStats(warmup,Data,args.graphs,not args.quiet,'_{0}_{1}'.format(args.file.name,i))
       means.append(mean)

@@ -51,9 +51,18 @@ def add_barostat(system,args):
         logger.info("This is a constant pressure (NPT) run at %.2f bar pressure" % args.pressure)
         logger.info("Adding Monte Carlo barostat with volume adjustment interval %i" % args.nbarostat)
         logger.info("Anisotropic box scaling is %s" % ("ON" if args.anisotropic else "OFF"))
-        if args.anisotropic:
+        if args.tension > 0:
+            logger.info("Tension={} > 0, using Membrane Barostat with z-mode {}".format(args.tension, args.zmode))
+            if args.anisotropic:
+                logger.info("XY-axes will change length independently")
+                XYmode = mm.MonteCarloMembraneBarostat.XYAnisotropic
+            else:
+                XYmode = mm.MonteCarloMembraneBarostat.XYIsotropic
+            #barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension*u.bar*u.nanometer,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+            barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+        elif args.anisotropic:
             logger.info("Only the Z-axis will be adjusted")
-            barostat = mm.MonteCarloAnisotropicBarostat(Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
+            barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
         else:
             barostat = mm.MonteCarloBarostat(args.pressure * u.bar, args.temperature * u.kelvin, args.nbarostat)
         system.addForce(barostat)
@@ -163,7 +172,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
 
     constr = {None: None, "None":None,"HBonds":app.HBonds,"HAngles":app.HAngles,"AllBonds":app.AllBonds}[args.constraints]   
     start = time.time()
-    system = top.createSystem(nonbondedMethod=app.PME, ewaldErrorTolerance = args.ewald_error_tolerance,
+    system = top.createSystem(nonbondedMethod=app.NoCutoff, ewaldErrorTolerance = args.ewald_error_tolerance,
                         nonbondedCutoff=args.nonbonded_cutoff*u.nanometers,
                         rigidWater = args.rigid_water, constraints = constr)
     logger.info("Took {}s to create system".format(time.time()-start))
@@ -265,8 +274,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     logger.info("--== PME parameters ==--")
     ftmp = [f for ii, f in enumerate(simulation.system.getForces()) if isinstance(f,mm.NonbondedForce)]
     fnb = ftmp[0]   
-    PMEparam = fnb.getPMEParametersInContext(simulation.context)
-    logger.info(fnb.getPMEParametersInContext(simulation.context))
+    if fnb.getNonbondedMethod()==3:
+        PMEparam = fnb.getPMEParametersInContext(simulation.context)
+        logger.info(fnb.getPMEParametersInContext(simulation.context))
     #nmeshx = int(PMEparam[1]*1.5)
     #nmeshy = int(PMEparam[2]*1.5)
     #nmeshz = int(PMEparam[3]*1.5)
@@ -440,16 +450,21 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         Prog.t00 = t1
     #simulation.step(args.production)
 
+    boxsizes = np.zeros([nblocks,3])
     for iblock in range(0,nblocks):
         logger.info("Starting block {}".format(iblock))
         start = time.time()
         simulation.step(blocksteps)
         end = time.time()
         logger.info('Took {} seconds for block {}'.format(end-start,iblock))
-
+        thisbox = simulation.context.getState().getPeriodicBoxVectors()
+        logger.info('Box size: {}'.format(thisbox)) 
+        boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
         app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+        np.savetxt('boxdimensions.dat',boxsizes)
+
 #END main()
 
 

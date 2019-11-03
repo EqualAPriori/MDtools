@@ -1,3 +1,8 @@
+################################################################
+# Kevin Shen, 2019                                             #
+# kevinshen@ucsb.edu                                           #
+#                                                              #
+################################################################
 ## Helper functions to alchemize (small, < rcut) molecules in openMM
 #  Currently implemented for handling standard OMM forcefields (i.e. the standard nonbonded force; support for custom nonbonded force to come later)#
 #  Strategy is as delineated here: https://github.com/choderalab/openmmtools/issues/376
@@ -5,6 +10,20 @@
 #  2) Add new softCoreForce to turn off LJ interaction with other particles
 #  3) Add new soluteCoulForce to turn on intramolecular electrostatics
 #  4) Add new soluteLJForce to turn on intramolecular LJ interactions
+# 
+# Example Usage:
+#import alchemify
+#soluteIndices = []
+#    soluteResidues = [soluteRes] #list of residues to alchemify
+#    #parmed gromacs topology
+#    for ir,res in enumerate(top.residues):
+#        if ir in soluteResidues:
+#            for atom in res.atoms:
+#                soluteIndices.append(atom.idx)
+#    print("Solute residue: {}".format([top.residues[ir].atoms for ir in soluteResidues]))
+#    print("Solute Indices: {}".format(soluteIndices))
+#    alch = alchemify.alchemist(system,lambdaLJ,lambdaQ)
+#    alch.setupSolute(soluteIndices)
 
 import simtk.openmm as mm
 import simtk.openmm.app as app
@@ -91,6 +110,8 @@ class alchemist:
         #=== Set other interaction parameters ===
         rcut = NBForce.getCutoffDistance() #default in nanometers
         nonbondedMethod = min(NBForce.getNonbondedMethod(),2)
+        print("Cutoff method: {}".format(nonbondedMethod))
+        print("compare to cutoff nonperiodic: {}".format(mm.CustomNonbondedForce.CutoffPeriodic))
 
         #Set other soft-core parameters as needed
         SoftCoreForce.setCutoffDistance(rcut)

@@ -655,8 +655,68 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         logger.info('Took {} seconds for block {}'.format(end-start,iblock))
         
         myBarostat.barostatMove(simulation, iblock)
-        
-        '''
+       
+        if np.mod(iblock,100) == 0:
+            simulation.saveState(checkpointxml)
+            positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+            app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+            np.savetxt('boxdimensions.dat',myBarostat.boxsizes)
+
+#END main()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Simulation Properties')
+    parser.add_argument("paramfile", default='params.in', type=str, help="param.in file")
+    parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
+    parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
+    parser.add_argument("--customff", default="", type=str, help="Custom force field python script to run after generating system")
+    #parser.add_argument("simtime", type=float, help="simulation runtime (ns)")
+    #parser.add_argument("Temp", type=float, help="system Temperature")
+    #parser.add_argument("--NPT", action="store_true", help="NPT flag")
+    #parser.add_argument("LJcut", type=float, help="LJ cutoff (Angstroms)")
+    cmdln_args = parser.parse_args()
+
+
+    #================================#
+    #    The command line parser     #
+    #================================#
+    '''
+    # Taken from MSMBulder - it allows for easy addition of arguments and allows "-h" for help.
+    def add_argument(group, *args, **kwargs):
+        if 'default' in kwargs:
+            d = 'Default: {d}'.format(d=kwargs['default'])
+            if 'help' in kwargs:
+                kwargs['help'] += ' {d}'.format(d=d)
+            else:
+                kwargs['help'] = d
+        group.add_argument(*args, **kwargs)
+
+    print
+    print " #===========================================#"
+    print " #|    OpenMM general purpose simulation    |#"
+    print " #| (Hosted @ github.com/leeping/OpenMM-MD) |#"
+    print " #|  Use the -h argument for detailed help  |#"
+    print " #===========================================#"
+    print
+
+    parser = argparse.ArgumentParser()
+    add_argument(parser, 'pdb', nargs=1, metavar='input.pdb', help='Specify one PDB or AMBER inpcrd file \x1b[1;91m(Required)\x1b[0m', type=str)
+    add_argument(parser, 'xml', nargs='+', metavar='forcefield.xml', help='Specify multiple force field XML files, one System XML file, or one AMBER prmtop file \x1b[1;91m(Required)\x1b[0m', type=str)
+    add_argument(parser, '-I', '--inputfile', help='Specify an input file with options in simple two-column format.  This script will autogenerate one for you', default=None, type=str)
+    cmdline = parser.parse_args()
+    pdbfnm = cmdline.pdb[0]
+    xmlfnm = cmdline.xml
+    args = SimulationOptions(cmdline.inputfile, pdbfnm)
+    '''
+
+    # === RUN === #
+    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, customff=cmdln_args.customff)
+
+#End __name__
+
+#MISC, delete below
+'''
         thisbox = simulation.context.getState().getPeriodicBoxVectors()
         logger.info('Box size: {}'.format(thisbox)) 
         boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
@@ -738,63 +798,6 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
             logger.info('  ')
 
         #finish membrane barostating
-        '''
+'''
 
-        simulation.saveState(checkpointxml)
-        positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
-        app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
-        np.savetxt('boxdimensions.dat',myBarostat.boxsizes)
-
-#END main()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Simulation Properties')
-    parser.add_argument("paramfile", default='params.in', type=str, help="param.in file")
-    parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
-    parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
-    parser.add_argument("--customff", default="", type=str, help="Custom force field python script to run after generating system")
-    #parser.add_argument("simtime", type=float, help="simulation runtime (ns)")
-    #parser.add_argument("Temp", type=float, help="system Temperature")
-    #parser.add_argument("--NPT", action="store_true", help="NPT flag")
-    #parser.add_argument("LJcut", type=float, help="LJ cutoff (Angstroms)")
-    cmdln_args = parser.parse_args()
-
-
-    #================================#
-    #    The command line parser     #
-    #================================#
-    '''
-    # Taken from MSMBulder - it allows for easy addition of arguments and allows "-h" for help.
-    def add_argument(group, *args, **kwargs):
-        if 'default' in kwargs:
-            d = 'Default: {d}'.format(d=kwargs['default'])
-            if 'help' in kwargs:
-                kwargs['help'] += ' {d}'.format(d=d)
-            else:
-                kwargs['help'] = d
-        group.add_argument(*args, **kwargs)
-
-    print
-    print " #===========================================#"
-    print " #|    OpenMM general purpose simulation    |#"
-    print " #| (Hosted @ github.com/leeping/OpenMM-MD) |#"
-    print " #|  Use the -h argument for detailed help  |#"
-    print " #===========================================#"
-    print
-
-    parser = argparse.ArgumentParser()
-    add_argument(parser, 'pdb', nargs=1, metavar='input.pdb', help='Specify one PDB or AMBER inpcrd file \x1b[1;91m(Required)\x1b[0m', type=str)
-    add_argument(parser, 'xml', nargs='+', metavar='forcefield.xml', help='Specify multiple force field XML files, one System XML file, or one AMBER prmtop file \x1b[1;91m(Required)\x1b[0m', type=str)
-    add_argument(parser, '-I', '--inputfile', help='Specify an input file with options in simple two-column format.  This script will autogenerate one for you', default=None, type=str)
-    cmdline = parser.parse_args()
-    pdbfnm = cmdline.pdb[0]
-    xmlfnm = cmdline.xml
-    args = SimulationOptions(cmdline.inputfile, pdbfnm)
-    '''
-
-    # === RUN === #
-    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, customff=cmdln_args.customff)
-
-#End __name__
 

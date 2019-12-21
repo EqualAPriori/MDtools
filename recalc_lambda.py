@@ -93,15 +93,16 @@ def set_thermo(system,args):
     return integrator
 
 
-def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, soluteRes=0,lambdaLJ=1.0,lambdaQ=1.0, trajfile="", outfile=""): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
+def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, soluteRes=[0],lambdaLJ=1.0,lambdaQ=1.0, ewldTol=1e-7, trajfile="", outfile=""): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
     # === PARSE === #
     args = mdparse.SimulationOptions(paramfile, overrides)
    
     # paperwork
     assert trajfile, "Must provide a trajectory file to recalculate on"
+    logger.info("Reading in trajectory from {}".format(trajfile))
     if not outfile:
         outfile = "lamLJ{}_lamQ{}_resid{}".format(lambdaLJ,lambdaQ,soluteRes)
-        print("Default output: {}".format(outfile))
+        logger.info("Default output: {}".format(outfile))
     args.force_active('minimize',val=False,msg="Recalculating, don't minimize")
 
 
@@ -121,6 +122,12 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         args.force_active('outnetcdf',val='output_{:02n}.nc'.format(cont),msg='continuing')
         args.force_active('logfile',val='thermo.log_{:02n}'.format(cont),msg='continuing')
         args.force_active('outdcd',val='output_{:02n}.dcd'.format(cont),msg='continuing')
+
+
+    logger.info("Recalculating energies for free energy, force ewald tolerance to be tighter for reproducibility")
+    ewald_error_tolerance=ewldTol
+    args.force_active('ewald_error_tolerance',val=ewald_error_tolerance,msg='free energy calculation needs tighter Ewald tolearnce')
+    args.force_active('cuda_precision',val='double',msg='free energy calculation needs higher precision')
 
     incoord         = args.incoord
     out_pdb         = args.outpdb
@@ -209,14 +216,14 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     logger.info("External forces added: {}".format(fExts))
     """
     soluteIndices = []
-    soluteResidues = [soluteRes] #list of residues to alchemify
+    soluteResidues = soluteRes #list of residues to alchemify. modified s.t. soluteRes is already a list
     #parmed gromacs topology
     for ir,res in enumerate(top.residues):
         if ir in soluteResidues:
             for atom in res.atoms:
                 soluteIndices.append(atom.idx)
-    print("Solute residue: {}".format([top.residues[ir].atoms for ir in soluteResidues]))
-    print("Solute Indices: {}".format(soluteIndices))
+    logger.info("Solute residue: {}".format([top.residues[ir].atoms for ir in soluteResidues]))
+    logger.info("Solute Indices: {}".format(soluteIndices))
     #if using openmm topology. unfortunately don't know how to convert from parmed to openmm#:
     #topology = parmed.openmm.load_topology(top.topology)
     #print(type(topology))
@@ -227,7 +234,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
 
     alch = alchemify.alchemist(system,lambdaLJ,lambdaQ)
     alch.setupSolute(soluteIndices)
-    print(system.getForces())
+    logger.info(system.getForces())
     
 
 
@@ -267,7 +274,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
             if platform.getName()=="CUDA":
                 platform.setPropertyDefaultValue("CudaDeviceIndex", device)
             elif platform.getName()=="OpenCL":
-                print("set OpenCL device to {}".format(device))
+                logger.info("set OpenCL device to {}".format(device))
                 platform.setPropertyDefaultValue("OpenCLDeviceIndex", device)
         else:
             logger.info("Using the default (fastest) device")
@@ -349,7 +356,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     for line in args.record():
         print(line)
 
-    print("Took {}s to make and setup simulation object".format(time.time()-start))
+    logger.info("Took {}s to make and setup simulation object".format(time.time()-start))
 
     #============================#
     #| Initialize & Eq/Warm-Up  |#
@@ -357,28 +364,33 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
 
     p = simulation.context.getPlatform()
     if p.getName()=="CUDA" or p.getName()=="OpenCL":
-        print("simulation platform: {}".format(p.getName()) )
-        print(p.getPropertyNames())
-        print(p.getPropertyValue(simulation.context,'DeviceName'))
-        print("Device Index: {}".format(p.getPropertyValue(simulation.context,'DeviceIndex')))
-
+        logger.info("simulation platform: {}".format(p.getName()) )
+        logger.info(p.getPropertyNames())
+        logger.info(p.getPropertyValue(simulation.context,'DeviceName'))
+        logger.info("Device Index: {}".format(p.getPropertyValue(simulation.context,'DeviceIndex')))
+        logger.info("Precision: {}".format(p.getPropertyValue(simulation.context,'Precision')))
 
     if os.path.exists(args.restart_filename) and args.read_restart:
-        print("Restarting simulation from the restart file.")
-        print("Currently is filler")
+        logger.info("Restarting simulation from the restart file.")
+        logger.info("Currently is filler")
     else:
         # Set initial positions.
         if incoord.split(".")[-1]=="pdb":
             pdb = app.PDBFile(incoord) #pmd.load_file(incoord)
             simulation.context.setPositions(pdb.positions)
-            print('Set positions from pdb, {}'.format(incoord))
+            logger.info('Set positions from pdb, {}'.format(incoord))
             molecTopology = incoord
         elif incoord.split(".")[-1]=="xyz":
             traj = mdtraj.load(incoord, top = mdtraj.Topology.from_openmm(simulation.topology))
             simulation.context.setPositions( traj.openmm_positions(0) )
         elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
-            print('Set positions from xml, {}'.format(incoord))
+            logger.info('Set positions from xml, {}'.format(incoord))
+            logger.info("Need to make sure to set Global lambda parameters properly. The charges in the standard Nonbonded Force should've already been set by alchemify.")
+            logger.info( 'parameters after loading xml: (lambdaLJ, {}), (lambdaQ, {})'.format(simulation.context.getParameter('lambdaLJ'), simulation.context.getParameter('lambdaQ')))
+            simulation.context.setParameter('lambdaLJ',lambdaLJ)
+            simulation.context.setParameter('lambdaQ',lambdaQ)
+            logger.info( 'parameters after setting properly: (lambdaLJ, {}), (lambdaQ, {})'.format(simulation.context.getParameter('lambdaLJ'), simulation.context.getParameter('lambdaQ')))
         else:
             logger.info("Error, can't handle input coordinate filetype")
         
@@ -395,11 +407,15 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     #============================#
     #|   Recalculate Energies   |#
     #============================#
-    traj = mdtraj.load(trajfile, top=args.incoord)
+    if incoord.split(".")[-1]=="pdb":
+        traj = mdtraj.load(trajfile, top=args.incoord)
+    elif incoord.split(".")[-1]=="xml": #workaround, since if using continue flag > 0, I force input to be from previous xml file
+        traj = mdtraj.load(trajfile, top=args.chkpdb)
+
     PE = np.zeros(traj.n_frames) 
     for it,t in enumerate(traj):
         if np.mod(it,100) == 0:
-            print("...Frame {}".format(it))
+            logger.info("...Frame {}".format(it))
         box = t.unitcell_vectors[0]
         simulation.context.setPeriodicBoxVectors(box[0], box[1], box[2])
         simulation.context.setPositions(t.xyz[0])
@@ -407,7 +423,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         PE[it] = state.getPotentialEnergy().value_in_unit(unit.kilojoule_per_mole)
         
     with open(outfile,'w') as f:
-        f.write("#frame\tPE(kJ/mol)\n")
+        f.write("#frame\tPE(kJ/mol), ewald error tolerance: {}\n".format(args.ewald_error_tolerance))
         for ie,energy in enumerate(PE):
             f.write("{}\t{}\n".format(ie,energy))
 
@@ -423,9 +439,10 @@ if __name__ == "__main__":
     parser.add_argument("--outfile", default="", type=str, help="place to write re-calculated energies")
     parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
     parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
-    parser.add_argument("-soluteRes", type=int, help="Solute residue index to alchemify")
+    parser.add_argument("-soluteRes", action='append', type=int, help="Solute residue index to alchemify")
     parser.add_argument("-lambdaLJ", type=float, default=1.0, help="lamdaLJ coupling, default 1.0")
     parser.add_argument("-lambdaQ", type=float, default=1.0, help="lamdaQ coupling, default 1.0")
+    parser.add_argument('-ewldTol', default=1e-7, type=float, help="ewld tolerance. default is 1e-7")
     
     #parser.add_argument("--customff", default="", type=str, help="Custom force field python script to run after generating system")
     #parser.add_argument("simtime", type=float, help="simulation runtime (ns)")
@@ -468,7 +485,7 @@ if __name__ == "__main__":
     '''
 
     # === RUN === #
-    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, soluteRes=cmdln_args.soluteRes, lambdaLJ=cmdln_args.lambdaLJ, lambdaQ=cmdln_args.lambdaQ, trajfile=cmdln_args.trajfile, outfile=cmdln_args.outfile)
+    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, soluteRes=cmdln_args.soluteRes, lambdaLJ=cmdln_args.lambdaLJ, lambdaQ=cmdln_args.lambdaQ, ewldTol=cmdln_args.ewldTol, trajfile=cmdln_args.trajfile, outfile=cmdln_args.outfile)
 
 #End __name__
 

@@ -56,6 +56,7 @@ defines = {}
 
 # Test area parameters
 #dAfrac   = 0.00001
+#scaling1 = expanding area, scaling2 = shrinking area
 scaleZ1     = 1.0/(1.0 + dAfrac)
 scaleXY1    = (1.0 + dAfrac)**0.5
 scaleZ2     = 1.0/(1.0 - dAfrac)
@@ -68,7 +69,7 @@ useLJPME        = True  #True
 LJcut           = 12    #Angstroms
 tail            = False#False
 Temp            = T     #K
-Pressure        = 1     #bar
+Pressure        = 1.    #bar
 barostatfreq    = 25    #time steps
 fric            = 1.0   #1/ps
 dt              = 2.0   #fs
@@ -221,6 +222,7 @@ kTkJmol = kT*Nav/1000   #kT in kJ/mol
 dE1 = energies[indices,1] - energies[indices,0]
 dE2 = energies[indices,2] - energies[indices,0]
 
+# --- Using exponential averaging, ok only for small energy changes ---
 BdE1 = dE1/kTkJmol
 BdE2 = dE2/kTkJmol
 
@@ -252,6 +254,47 @@ with open('results.txt',"a") as f:
     f.write('T={}K, dA % = {} area change, gamma = {}+/-{} N/m\n'.format(Temp,dAfrac, tension, tensionError)),
     f.write('dFfwd = {}+/-{}J/mol, dFback={}+/-{}J/mol\n'.format(dF1, dF1error, dF2, dF2error))
     f.write('or dFfwd = {}+/-{}kT, dFback = {}+/-{}kT\n'.format(dF1/kT, dF1error/kT, dF2/kT, dF2error/kT))
+
+
+# --- using pymbar to do Bennet's, assuming A+dA --> A is the same as A --> A-dA --- #
+from pymbar import MBAR, timeseries
+print("=== Now trying pymbar ===")
+nstates = 2
+nframes = len(dE1)
+u_kln = np.zeros([nstates,nstates,nframes], np.float64)
+u_kln[0,1,:] = BdE1
+u_kln[1,0,:] = BdE2
+
+# get uncorrelated samples
+print("=== Getting uncorrelated samples===")
+N_k = np.zeros([nstates], np.int32) # number of uncorrelated samples
+for k in range(nstates):
+    [nequil, g, Neff_max] = timeseries.detectEquilibration(u_kln[k,k,:])
+    indices = timeseries.subsampleCorrelatedData(u_kln[k,k,:], g=g)
+    N_k[k] = len(indices)
+    u_kln[k,:,0:N_k[k]] = u_kln[k,:,indices].T
+print("...found {} uncorrelated samples...".format(N_k))
+
+np.save('ukln_{}'.format(flag),u_kln)
+
+# Compute free energy differences and statistical uncertainties
+print("=== Computing free energy differences ===")
+mbar = MBAR(u_kln, N_k)
+[DeltaF_ij, dDeltaF_ij, Theta_ij] = mbar.getFreeEnergyDifferences()
+
+np.savetxt('DeltaF_{}.dat'.format(flag),DeltaF_ij)
+np.savetxt('dDeltaF_{}.dat'.format(flag),dDeltaF_ij)
+
+# Print out one line summary 
+tension = DeltaF_ij[0,1]/2/da * 1e18
+tensionError = dDeltaF_ij[0,1]/2/da * 1e18
+print('tension (pymbar): {} +/- {}N/m'.format(tension,tensionError))
+
+with open('results.txt',"a") as f:
+    f.write('\nUsing pymbar:\n')
+    f.write('dF = {} +/- {}kT\n'.format(DeltaF_ij[0,1],dDeltaF_ij[0,1]))
+    f.write('tension = {} +/- {} N/m'.format(tension, tensionError))
+
 
 
 

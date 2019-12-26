@@ -9,6 +9,7 @@
 #   1) equilibrate                                             #
 #   2) production run                                          #
 #Doesn't write no-water config, unlike simDCD.py               #
+#DEFAULTS with Pressure=1.0, moving the z-axis                 #
 ################################################################
 
 

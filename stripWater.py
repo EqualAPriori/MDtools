@@ -80,7 +80,6 @@ def writeDCD(traj,filename):
     tmp = '.'.join(tmp[:-1])+'_top.pdb'
     traj[0].save_pdb(tmp)
     
-    
 
 def writeLammps(traj,filename):
     traj.save_lammpstrj(filename)
@@ -102,7 +101,7 @@ def main(topname,trajname,outname,fmt=None):
     Returns
     -------
     """
-    fileformats = ["nc","netcdf","lammps","lammpstrj","dcd"]
+    fileformats = ["nc","netcdf","lammps","lammpstrj","dcd","pdb"]
 
     if fmt is None:
         fmt = outname.split('.')[-1]
@@ -115,8 +114,10 @@ def main(topname,trajname,outname,fmt=None):
     print("writing...")
     if fmt in ["nc","netcdf"]:
         writeNetcdf(trj,outname)
-    if fmt in ["dcd"]:
+    elif fmt in ["dcd"]:
         writeDCD(trj,outname)
+    elif fmt in ["pdb"]:
+        trj.save(outname)        
     elif fmt in ["lammps","lammpstrj"]:
         writeLammps(trj,outname)
     print("took {} seconds".format(timeit.default_timer()-start))

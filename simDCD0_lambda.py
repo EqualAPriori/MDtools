@@ -93,7 +93,7 @@ def set_thermo(system,args):
     return integrator
 
 
-def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, soluteRes=0,lambdaLJ=1.0,lambdaQ=1.0): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
+def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, soluteRes=[0],lambdaLJ=1.0,lambdaQ=1.0): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
     # === PARSE === #
     args = mdparse.SimulationOptions(paramfile, overrides)
     
@@ -202,7 +202,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     logger.info("External forces added: {}".format(fExts))
     """
     soluteIndices = []
-    soluteResidues = [soluteRes] #list of residues to alchemify
+    soluteResidues = soluteRes #list of residues to alchemify. modified s.t. soluteRes is already a list
     #parmed gromacs topology
     for ir,res in enumerate(top.residues):
         if ir in soluteResidues:
@@ -223,7 +223,6 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     print(system.getForces())
     
 
-    
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
 
@@ -281,11 +280,13 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if args.integrator != 'mtsvvvr':
         for i in range(nfrc):
             system.getForce(i).setForceGroup(i)
-    '''
+    ''' 
     for i in range(nfrc):
         # Set vdW switching function manually.
         f = system.getForce(i)
         if f.__class__.__name__ == 'NonbondedForce':
+            #f.setUseSwitchingFunction(False)
+            #f.setSwitchingDistance(1.0*u.nanometers)
             if 'vdw_switch' in args.ActiveOptions and args.vdw_switch:
                 f.setUseSwitchingFunction(True)
                 f.setSwitchingDistance(args.switch_distance)
@@ -496,7 +497,6 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
         app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
-
 #END main()
 
 
@@ -505,7 +505,7 @@ if __name__ == "__main__":
     parser.add_argument("paramfile", default='params.in', type=str, help="param.in file")
     parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
     parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
-    parser.add_argument("-soluteRes", type=int, help="Solute residue index to alchemify")
+    parser.add_argument("-soluteRes", action='append', type=int, help="Solute residue index to alchemify")
     parser.add_argument("-lambdaLJ", type=float, default=1.0, help="lamdaLJ coupling, default 1.0")
     parser.add_argument("-lambdaQ", type=float, default=1.0, help="lamdaQ coupling, default 1.0")
     

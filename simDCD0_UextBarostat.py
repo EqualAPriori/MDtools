@@ -297,6 +297,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     checkpointxml   = args.chkxml
     checkpointpdb   = args.chkpdb
     checkpointchk   = 'chk_{:02n}.chk'.format(cont)
+    equilibratedpdb = 'equilibrated_{:02n}.pdb'.format(cont)
 
     # Parameters
     #Temp            = args.temperature        #K
@@ -554,6 +555,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
             logger.info("Progress will be reported every %i steps" % args.report_interval)
         # This command actually does all of the computation.
         simulation.step(args.equilibrate)
+        positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+        app.PDBFile.writeFile(simulation.topology, positions, open(equilibratedpdb, 'w')) 
         if args.report_interval > 0:
             # Get rid of the ProgressReport because we'll make a new one.
             simulation.reporters.pop()

@@ -68,7 +68,7 @@ class alchemist:
                 NBForce = frc
         self.lambdaLJ = lambdaLJ
         self.lambdaQ = lambdaQ
-        print("Using lambdaLJ: {}, lambdaQ: {}".format(self.lambdaLJ,self.lambdaQ))
+        print("...alchemify: Using lambdaLJ: {}, lambdaQ: {}".format(self.lambdaLJ,self.lambdaQ))
         
         #Define the soft-core function for turning on/off LJ interactions
         #In energy expressions for CustomNonbondedForce, r is a special variable and refers to the distance between particles
@@ -110,8 +110,8 @@ class alchemist:
         #=== Set other interaction parameters ===
         rcut = NBForce.getCutoffDistance() #default in nanometers
         nonbondedMethod = min(NBForce.getNonbondedMethod(),2)
-        print("Cutoff method: {}".format(nonbondedMethod))
-        print("compare to cutoff nonperiodic: {}".format(mm.CustomNonbondedForce.CutoffPeriodic))
+        print("...alchemify: Cutoff method: {}".format(nonbondedMethod))
+        print("...alchemify: compare to cutoff nonperiodic: {}".format(mm.CustomNonbondedForce.CutoffPeriodic))
 
         #Set other soft-core parameters as needed
         SoftCoreForce.setCutoffDistance(rcut)

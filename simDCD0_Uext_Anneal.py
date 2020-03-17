@@ -181,7 +181,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-    
+
     logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
     # --- execute custom forcefield code ---
@@ -462,8 +462,16 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         Prog.t00 = t1
     #simulation.step(args.production)
 
+    Tfinal = args.temperature
+    Tinitial = Tfinal + 200
+    temps = np.ones(nblocks)*Tfinal
+    temps[:int(nblocks/2)] = np.linspace(Tinitial,Tfinal,num=int(nblocks/2))
+    print("Temperatures: {}".format(temps))
+
     for iblock in range(0,nblocks):
         logger.info("Starting block {}".format(iblock))
+        simulation.integrator.setTemperature(temps[iblock]) #assumes Langevin
+        logger.info("...setting temperature to {}".format(simulation.integrator.getTemperature()))
         start = time.time()
         simulation.step(blocksteps)
         end = time.time()

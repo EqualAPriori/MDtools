@@ -4,11 +4,17 @@
 #                                                              #
 # General purpose openMM simulation script.                    #
 # Allows for (verlet, langevin); barostats; LJPME              #
-# Adds Uext potential
 # simulation protocol:                                         #
 #   1) equilibrate                                             #
 #   2) production run                                          #
 #Doesn't write no-water config, unlike simDCD.py               #
+#                                                              # 
+#This version simulates a variable tension ensemble            #
+#  Apply energy penaltly: -gamma(A-A0) + 0.5*alpha(A-A0)^2     #
+#Alternative form: (symmetric in L, asymmetric in A)           #
+#  -gamma (A-A0) + alpha(L-L0)^2                               #
+#Should be used with a barostat, i.e. NPAT, assumes z-axis     #
+#Uses Built-in Barostat to handle z-changes                    #
 ################################################################
 
 
@@ -29,7 +35,6 @@ import numpy as np
 # OpenMM Imports
 import simtk.openmm as mm
 import simtk.openmm.app as app
-import simtk.unit as unit
 
 # ParmEd & MDTraj Imports
 from parmed import gromacs
@@ -45,6 +50,10 @@ import mdparse
 
 
 
+dAfrac = 0.001
+scaling = 1+dAfrac
+scaleNormal = 1/scaling
+scaleTangent = scaling**0.5
 
 def add_barostat(system,args):
     if args.pressure <= 0.0:
@@ -53,9 +62,23 @@ def add_barostat(system,args):
         logger.info("This is a constant pressure (NPT) run at %.2f bar pressure" % args.pressure)
         logger.info("Adding Monte Carlo barostat with volume adjustment interval %i" % args.nbarostat)
         logger.info("Anisotropic box scaling is %s" % ("ON" if args.anisotropic else "OFF"))
-        if args.anisotropic:
+        if args.tension > 0:
+            logger.info("Only the Z-axis will be adjusted for NPT moves, keep Volume constant when perturbing area")
+            barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
+
+            '''
+            logger.info("Tension={} > 0, using Membrane Barostat with z-mode {}".format(args.tension, args.zmode))
+            if args.anisotropic:
+                logger.info("XY-axes will change length independently")
+                XYmode = mm.MonteCarloMembraneBarostat.XYAnisotropic
+            else:
+                XYmode = mm.MonteCarloMembraneBarostat.XYIsotropic
+            #barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension*u.bar*u.nanometer,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+            barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+            '''
+        elif args.anisotropic:
             logger.info("Only the Z-axis will be adjusted")
-            barostat = mm.MonteCarloAnisotropicBarostat(Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
+            barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
         else:
             barostat = mm.MonteCarloBarostat(args.pressure * u.bar, args.temperature * u.kelvin, args.nbarostat)
         system.addForce(barostat)
@@ -91,7 +114,7 @@ def set_thermo(system,args):
     return integrator
 
 
-def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True, customff=""): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
+def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, progressreport=True): #simtime=2.0, T=298.0, NPT=True, LJcut=10.0, tail=True, useLJPME=False, rigidH2O=True, device=0, quiktest=False):
     # === PARSE === #
     args = mdparse.SimulationOptions(paramfile, overrides)
     
@@ -160,12 +183,16 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     top = gromacs.GromacsTopologyFile(top_file, defines=defines)
     gro = gromacs.GromacsGroFile.parse(box_file)
     top.box = gro.box
+    logger.info("Initial Box: {}".format(gro.box))
+    L0 = gro.box[0]/10.*u.nanometer #assuming z-axis, convert Angstrom to nm
+    A0 = gro.box[0]*gro.box[1]/100.*u.nanometer**2 #assuming z-axis
+    print("For restoring tension calculations, A0={}nm^2, L0={}nm".format(A0, L0))
     logger.info("Took {}s to create topology".format(time.time()-start))
     print(top)
 
     constr = {None: None, "None":None,"HBonds":app.HBonds,"HAngles":app.HAngles,"AllBonds":app.AllBonds}[args.constraints]   
     start = time.time()
-    system = top.createSystem(nonbondedMethod=app.PME, ewaldErrorTolerance = args.ewald_error_tolerance,
+    system = top.createSystem(nonbondedMethod=app.NoCutoff, ewaldErrorTolerance = args.ewald_error_tolerance,
                         nonbondedCutoff=args.nonbonded_cutoff*u.nanometers,
                         rigidWater = args.rigid_water, constraints = constr)
     logger.info("Took {}s to create system".format(time.time()-start))
@@ -181,24 +208,12 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-    
+
     logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
-    # --- execute custom forcefield code ---
-    if customff:
-        logger.info("Using customff: [{}]".format(customff))
-        with open(customff,'r') as f:
-            ffcode = f.read()
-        exec(ffcode,globals(),locals()) #python 3, need to pass in globals to allow exec to modify them (i.e. the system object)
-        #print(sys.path)
-        #sys.path.insert(1,'.')
-        #exec("import {}".format(".".join(customff.split(".")[:-1])))
-    else:
-        logger.info("--- No custom ff code provided ---")
-
-    fExts=[f for f in system.getForces() if isinstance(f,mm.CustomExternalForce)]
-    logger.info("External forces added: {}".format(fExts))
-
+    #print("Examining exceptions: ")
+    #for ii in range(0,70000,100):
+    #    print("{}".format(fnb.getExceptionParameters(ii)))
 
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
@@ -283,12 +298,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     logger.info("--== PME parameters ==--")
     ftmp = [f for ii, f in enumerate(simulation.system.getForces()) if isinstance(f,mm.NonbondedForce)]
     fnb = ftmp[0]   
-    if fnb.getNonbondedMethod() == 4: #check for PME
+    if fnb.getNonbondedMethod()==3:
         PMEparam = fnb.getPMEParametersInContext(simulation.context)
         logger.info(fnb.getPMEParametersInContext(simulation.context))
-    if fnb.getNonbondedMethod() == 5: #check for LJPME
-        PMEparam = fnb.getLJPMEParametersInContext(simulation.context)
-        logger.info(fnb.getLJPMEParametersInContext(simulation.context))
     #nmeshx = int(PMEparam[1]*1.5)
     #nmeshy = int(PMEparam[2]*1.5)
     #nmeshz = int(PMEparam[3]*1.5)
@@ -338,6 +350,10 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     else:
         # Set initial positions.
         if incoord.split(".")[-1]=="pdb":
+            #print(incoord)
+            #t = mdtraj.load(incoord)
+            #print(t)
+            #simulation.context.setPositions( traj.openmm_positions(0) )
             pdb = app.PDBFile(incoord) #pmd.load_file(incoord)
             simulation.context.setPositions(pdb.positions)
             print('Set positions from pdb, {}'.format(incoord))
@@ -345,6 +361,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         elif incoord.split(".")[-1]=="xyz":
             traj = mdtraj.load(incoord, top = mdtraj.Topology.from_openmm(simulation.topology))
             simulation.context.setPositions( traj.openmm_positions(0) )
+            print('Set positions from xyz, {}'.format(incoord))
         elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
             print('Set positions from xml, {}'.format(incoord))
@@ -462,16 +479,100 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         Prog.t00 = t1
     #simulation.step(args.production)
 
+    boxsizes = np.zeros([nblocks,3])
+    TotalAcceptances = 0
+    TotalMCMoves = 0
     for iblock in range(0,nblocks):
         logger.info("Starting block {}".format(iblock))
         start = time.time()
         simulation.step(blocksteps)
         end = time.time()
         logger.info('Took {} seconds for block {}'.format(end-start,iblock))
+        thisbox = simulation.context.getState().getPeriodicBoxVectors()
+        logger.info('Box size: {}'.format(thisbox)) 
+        boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
 
-        simulation.saveState(checkpointxml)
-        positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
-        app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+        if args.tension > 0:
+            logger.info('=== Attempting area change ===')
+            #--- Assumes args.tension in units of bar*nm ---
+            kBT = u.AVOGADRO_CONSTANT_NA * u.BOLTZMANN_CONSTANT_kB * args.temperature * u.kelvin
+            tension = args.tension*u.bar*u.nanometer*u.AVOGADRO_CONSTANT_NA
+            Amax = 3.0 #relative to A0
+            alphascale = args.restoring_scale #1140.
+            alpha = alphascale/(1-np.sqrt(1/Amax))*u.bar*u.nanometer*u.AVOGADRO_CONSTANT_NA
+
+            #--- Set up ---
+            Eold = simulation.context.getState(getEnergy=True).getPotentialEnergy()
+            logger.info('... Current energy: {}'.format( Eold.value_in_unit(u.kilojoule_per_mole) ))
+            if np.random.random_sample() < 0.5:
+                logger.info('... proposing to shrink area by {}...'.format(scaling))
+                tmpf = 1/scaling
+            else:
+                logger.info('... proposing to expand area by {}...'.format(scaling))
+                tmpf = scaling
+
+            scaleNormal = 1.0/tmpf
+            scaleTangent = tmpf**0.5
+            
+            #--- actually scale box ---
+            oldbox = [thisbox[0], 
+                        thisbox[1],
+                        thisbox[2]]
+            newbox = [thisbox[0]*scaleTangent,
+                        thisbox[1]*scaleTangent,
+                        thisbox[2]*scaleNormal]
+            deltaArea = oldbox[0][0]*oldbox[1][1]*(tmpf-1.0)
+            deltaL = oldbox[0][0]*(scaleTangent - 1)
+            Aold = oldbox[0][0]*oldbox[1][1]
+            Anew = newbox[0][0]*newbox[1][1]
+            Lold = oldbox[0][0]
+            Lnew = newbox[0][0]
+            simulation.context.setPeriodicBoxVectors( newbox[0], newbox[1], newbox[2] )
+            
+            natoms = len(top.atoms) #using parmed gromacs topology object
+            pos = simulation.context.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(u.nanometer)
+            reference = np.zeros([natoms,3])
+            for res in top.residues:
+                atomids = [atom.idx for atom in res.atoms]
+                com = np.mean( pos[atomids,:], 0 )
+                reference[atomids,:] = com[None,:]
+
+            newpos = pos + reference*np.array( [scaleTangent-1.0, scaleTangent-1.0, scaleNormal-1.0] )    
+            simulation.context.setPositions(newpos)
+            Enew = simulation.context.getState(getEnergy=True).getPotentialEnergy()
+
+            #--- Monte Carlo Acceptance/Rejection ---
+            w = Enew - Eold - tension*deltaArea + alpha*( (Lnew-L0)**2.0 - (Lold-L0)**2.0 )
+            betaw = w/kBT
+            logger.info('... MC transition energy: {}'.format(betaw))
+            if betaw > 0 and np.random.random_sample() > np.exp(-betaw):
+                #Reject the step
+                logger.info('... Rejecting Step')
+                simulation.context.setPeriodicBoxVectors( oldbox[0], oldbox[1], oldbox[2] )
+                simulation.context.setPositions(pos)
+            else:
+                #Accept step
+                logger.info('... Accepting Step')
+                TotalAcceptances = TotalAcceptances + 1
+            TotalMCMoves += 1
+
+            #--- Print out final state ---
+            logger.info('... box state after MC move:')
+            logger.info( simulation.context.getState().getPeriodicBoxVectors() )
+            logger.info('... acceptance rate: {}'.format(np.float(TotalAcceptances)/np.float(TotalMCMoves)))
+            logger.info('  ')
+
+        #finish membrane barostating
+
+
+        if args.tension > 0.0 and np.mod(iblock,100) != 0:
+            continue
+        else:
+            simulation.saveState(checkpointxml)
+            positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+            app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+            np.savetxt('boxdimensions.dat',boxsizes)
+
 #END main()
 
 
@@ -480,7 +581,6 @@ if __name__ == "__main__":
     parser.add_argument("paramfile", default='params.in', type=str, help="param.in file")
     parser.add_argument("--deviceid", default=-1, type=int, help="GPU device id")
     parser.add_argument("--progressreport", default=True, type=bool, help="Whether or not to print progress report. Incurs small overhead")
-    parser.add_argument("--customff", default="", type=str, help="Custom force field python script to run after generating system")
     #parser.add_argument("simtime", type=float, help="simulation runtime (ns)")
     #parser.add_argument("Temp", type=float, help="system Temperature")
     #parser.add_argument("--NPT", action="store_true", help="NPT flag")
@@ -521,7 +621,7 @@ if __name__ == "__main__":
     '''
 
     # === RUN === #
-    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport, customff=cmdln_args.customff)
+    main(cmdln_args.paramfile, {}, deviceid=cmdln_args.deviceid, progressreport=cmdln_args.progressreport)
 
 #End __name__
 

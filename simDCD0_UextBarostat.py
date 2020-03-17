@@ -357,7 +357,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-        logger.info("Check dispersion flag: {}".format(fnb.getUseDispersionCorrection()) )
+
+    logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
     # --- execute custom forcefield code ---
     if customff:
@@ -606,7 +607,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         simulation.reporters.append(mdtraj.reporters.NetCDFReporter(out_nowater, netcdffreq, atomSubset = sel))
         '''
     if args.dcd_report_interval > 0:
-        mdparse.bak(out_dcd)
+
         logger.info("dcd Reporter will write to %s every %i steps" %(out_dcd, dcdfreq))
         simulation.reporters.append(mdtraj.reporters.DCDReporter(out_dcd, dcdfreq))
         '''

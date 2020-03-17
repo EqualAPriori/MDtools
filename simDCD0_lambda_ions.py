@@ -183,7 +183,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-        logger.info("Check dispersion flag: {}".format(fnb.getUseDispersionCorrection()) )
+
+    logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
     # --- execute custom forcefield code ---
     """

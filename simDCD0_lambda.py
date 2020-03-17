@@ -183,7 +183,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-        logger.info("Check dispersion flag: {}".format(fnb.getUseDispersionCorrection()) )
+    
+    logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
     # --- execute custom forcefield code ---
     """
@@ -226,7 +227,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     # === Integrator, Barostat, Additional Constraints === #
     integrator = set_thermo(system,args)
 
-    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigidwater == False):
+    if not hasattr(args,'constraints') or (str(args.constraints) == "None" and args.rigid_water == False):
         args.deactivate('constraint_tolerance',"There are no constraints in this system")
     else:
         logger.info("Setting constraint tolerance to %.3e" % args.constraint_tolerance)
@@ -280,7 +281,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if args.integrator != 'mtsvvvr':
         for i in range(nfrc):
             system.getForce(i).setForceGroup(i)
-    ''' 
+    '''
     for i in range(nfrc):
         # Set vdW switching function manually.
         f = system.getForce(i)

@@ -188,7 +188,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if (not args.dispersion_correction) or (args.nonbonded_method=="LJPME"):
         logger.info("Turning off tail correction...")
         fnb.setUseDispersionCorrection(False)
-        logger.info("Check dispersion flag: {}".format(fnb.getUseDispersionCorrection()) )
+    
+    logger.info("Check dispersion correction flag: {}".format(fnb.getUseDispersionCorrection()) )
 
 
     # === Integrator, Barostat, Additional Constraints === #
@@ -282,7 +283,13 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     #nmeshz = int(PMEparam[3]*1.5)
     #fnb.setPMEParameters(PMEparam[0],nmeshx,nmeshy,nmeshz)
     #logger.info(fnb.getPMEParametersInContext(simulation.context))
-
+    """
+    print("=== Setting interactions to zero ===")
+    for ii in range(fnb.getNumParticles()):
+        q,sig,eps = fnb.getParticleParameters(ii)
+        fnb.setParticleParameters(ii,q*0,1.0*u.nanometer,0*eps)
+    fnb.updateParametersInContext(simulation.context)
+    """
 
     # Print out some more information about the system
     logger.info("--== System Information ==--")
@@ -336,6 +343,8 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
             print('Set positions from xml, {}'.format(incoord))
+            thisbox = simulation.context.getState().getPeriodicBoxVectors()
+            logger.info('Box size: {}'.format(thisbox)) 
         else:
             logger.info("Error, can't handle input coordinate filetype")
         

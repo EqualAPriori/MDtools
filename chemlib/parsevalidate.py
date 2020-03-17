@@ -34,7 +34,10 @@ def parseBox( system_options ):
     """
 
     if "unitcell_lengths" in system_options:
-        box = np.array(system_options["unitcell_lengths"])
+        if isinstance(system_options['unitcell_lengths'], list):
+            box = np.array(system_options["unitcell_lengths"])
+        else:
+            box = np.array([float(length) for length in system_options['unitcell_lengths'].split()] )
     else:
         raise ValueError('unitcell_lengths key not found in system options')
 
@@ -73,8 +76,8 @@ def parseBond( system_specs ):
                 atype_name2 = entry[1]
                 length = float(entry[2])
                 K = np.inf if entry[3].lower() in ['inf','infty','infinity'] else float(entry[3])
-                bond_ffs.append( (bond_type, atype_name1, atype_name2, length, K) )
-
+                #bond_ffs.append( (bond_type, atype_name1, atype_name2, length, K) )
+                bond_ffs.append( {'bond_type':bond_type, 'atype1':atype_name1, 'atype2':atype_name2, 'length':length, 'K':K} )
         else: continue
 
     return bond_ffs
@@ -136,9 +139,9 @@ def parseGaussian( system_specs ):
             entry = entry.split()
             atype_name1 = entry[0]
             atype_name2 = entry[1]
-            awidth = entry[2] 
-            u0strength = entry[3]
-            cutoff = entry[4]
+            awidth = float( entry[2] )
+            u0strength = float(entry[3] )
+            cutoff = float( entry[4] )
 
             indv_gaussians.append( ('Gaussian', atype_name1, atype_name2, awidth, u0strength, cutoff) ) 
 
@@ -339,17 +342,17 @@ def parseSimulation( system_specs ):
         else:
             run_options['nsteps_min'] = 0
 
-        if 'nsteps_equil' in description:
-            run_options['nsteps_equil'] = description['nsteps_min']
+        if 'ntau_equil' in description:
+            run_options['ntau_equil'] = description['ntau_equil']
         else:
-            run_options['nsteps_equil'] = 0
+            run_options['ntau_equil'] = 0
 
-        if 'nsteps_prod' in description:
-            run_options['nsteps_prod'] = description['nsteps_prod']
+        if 'ntau_prod' in description:
+            run_options['ntau_prod'] = description['ntau_prod']
         else:
-            run_options['nsteps_prod'] = 0
+            run_options['ntau_prod'] = 0
 
-        if 'write_freq' in  description:
+        if 'write_freq' in  description: #write_freq is also given in terms of tau
             run_options['write_freq'] = description['write_freq']
         else:
             run_options['write_freq'] = 0

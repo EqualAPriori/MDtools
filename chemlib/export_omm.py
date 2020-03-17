@@ -86,7 +86,7 @@ def createOMMSys(my_top, verbose = False):
 
     if UNITS != "DimensionlessUnits": raise ValueError( "Danger! OMM export currently only for dimensionless units, but {} detected".format(Units) )
     "takes in Sim 'Sys' object and returns an OpenMM System and Topology"
-    print("=== OMM export currently uses LJ (Dimensionless) Units ===")
+    print("\n=== OMM export currently uses LJ (Dimensionless) Units ===")
     print("mass: {} dalton".format(mass.value_in_unit(unit.dalton)))
     print("epsilon: {}".format(epsilon))
     print("tau: {}".format(tau))
@@ -102,7 +102,7 @@ def createOMMSys(my_top, verbose = False):
     #===================================
     # Create a System and its Box Size #
     #===================================
-    print("=== Creating OMM System ===")
+    print("\n=== Creating OMM System ===")
     system = openmm.System()
 
     # Set the periodic box vectors:
@@ -136,8 +136,9 @@ def createOMMSys(my_top, verbose = False):
         atom_name_map.append(atom_type.name)
         sim_atom_type_map[atom_type.name] = atom_type
 
-    # --- next get the molecules and bondlist ---
+    # --- next get the molecules and bond_list ---
     residues = []
+    """#not used
     molecule_atom_list = {}
     molecule_bond_list = {}
     for mname, m in my_top.molecule_types.items():
@@ -147,52 +148,50 @@ def createOMMSys(my_top, verbose = False):
         molecule_atom_list[molname] = [a.name for r in m for a in r]  #stores names of atoms in molecule
         molecule_bond_list[molname] = [ [b[0],b[1]] for b in m.bonds ]
         #molecule_bond_list[molname] = [ [b[0], b[1]] for b in my_top.bonds_in_mol[im] ]    #stores bond indices in molecule
-
+    """
     # --- aggregate stuff, and add atoms to omm system ---
     # Particles are added one at a time
     # Their indices in the System will correspond with their indices in the Force objects we will add later
-    atom_list = [aname for aname in my_top.atoms]     #stores atom names
-    mol_list = [mname for mname in my_top.molecules]  #stores molecule names
+    atom_list = [a.name for a in my_top.atoms]     #stores atom names
+    res_list = [r.name for r in my_top.residues]   #stores residue names
+    mol_list = [m.name for m in my_top.molecules]  #stores molecule names
     for a in my_top.atoms:
         system.addParticle(a.mass * mass)
     print("Total number of particles in system: {}".format(system.getNumParticles()))
  
 
     # --- the actual work of creating the topology ---
-    constrained_bonds = False
-    
+
     top = app.topology.Topology()
     mdtrajtop = app.topology.Topology() #so that later can make molecules whole
     constrained_bonds = False
     constraint_lengths = []
     for im,mol in enumerate(my_top.molecules):
         chain = top.addChain() #Create new chain for each molecule
-        res = top.addResidue(mol.name, chain) #don't worry about actually specifying residues within a molecule
-        mdt_chain = mdtrajtop.addChain() #Create new chain for each molecule
-        mdt_res = mdtrajtop.addResidue(mol.name, mdt_chain)
-        
         # add the atoms
-        atoms_in_this_res = []
-        mdt_atoms_in_this_res = []
+        atoms_in_this_mol = []
+        mdt_atoms_in_this_mol = []
         #atomsInThisMol = [my_top.AtomTypes[ my_top.Atoms[ia] ] for ia in my_top.AtomsInThisMol[im]] #list of atom objects
-
         for ir,r in enumerate(mol):
-            for atom_ind,a in enumerate(r):
+            res = top.addResidue(mol.name, chain) #don't worry about actually specifying residues within a molecule
+            mdt_chain = mdtrajtop.addChain() #Create new chain for each molecule
+            mdt_res = mdtrajtop.addResidue(mol.name, mdt_chain)
+            for ia,a in enumerate(r):
                 el = elements[a.name]
-                if atom_ind > 0:
-                    previous_atom = atom
-                atom = top.addAtom( a.name, el, res )
+                #if ia > 0:
+                #    previous_atom = atom
+                atom = top.addAtom( a.name, el, res ) #reference to openMM atom instance
                 mdt_atom = mdtrajtop.addAtom( a.name, mdtraj.element.Element.getByAtomicNumber(atom_type_index[a.name]), mdt_res ) #use a dummy element by matching atomic number == cgAtomTypeIndex
-                atoms_in_this_res.append(atom)
-                mdt_atoms_in_this_res.append(mdt_atom)
+                atoms_in_this_mol.append(atom)
+                mdt_atoms_in_this_mol.append(mdt_atom)
 
         # add the bonds
         for bond_site in mol.bonds: #mol.bonds stores the intramolecular site indices of the bond
-            a1 = atoms_in_this_res[bond_site[0]] #the atoms_in_this_res has the current, newly added atoms of this residue
-            a2 = atoms_in_this_res[bond_site[1]]
+            a1 = atoms_in_this_mol[bond_site[0]] #the atoms_in_this_mol has the current, newly added atoms of this residue
+            a2 = atoms_in_this_mol[bond_site[1]]
             if verbose: print("Adding bond ({},{}), absolute index {},{}".format(bond_site[0],bond_site[1],a1.index,a2.index))
-            #top.addBond( atoms_in_this_res[bond.SType1.AInd], atoms_in_this_res[bond.SType2.AInd] )
-            newbond = top.addBond( a1, a2 )
+            #top.addBond( atoms_in_this_mol[bond.SType1.AInd], atoms_in_this_mol[bond.SType2.AInd] )
+            new_bond = top.addBond( a1, a2 )
             mdtrajtop.addBond( a1, a2 ) #don't worry about adding constraint to the mdtraj topology
 
             if bond_site.rigid:
@@ -215,7 +214,8 @@ def createOMMSys(my_top, verbose = False):
     #c) external force
 
     #TODO:
-    #1) spline/tabulated [would then need to implement a library of function evaluations...]
+    #-) spline/tabulated [would then need to implement a library of function evaluations...]
+    #-) special bonds treatment (i.e. all fixed bonds, bending and dihedrals)
 
     #============================
     #create Bonded Interactions #
@@ -223,7 +223,7 @@ def createOMMSys(my_top, verbose = False):
     #Currently only support harmonic bonds, pairwise bonds
     bond_ffs = parsevalidate.parseBond( my_top.system_specs )
     if bond_ffs: #found bonds
-        print("---> Found bonded interactions")
+        print("\n---> Found bonded interactions")
         bonded_force = openmm.HarmonicBondForce()
     #Check for bonds
 
@@ -235,8 +235,12 @@ def createOMMSys(my_top, verbose = False):
 
             applicable_potentials = []
             for potential in bond_ffs:
-                if potential[0] == 'harmonic':
-                    atype_name1, atype_name2, bond_length, K = potential[1:]
+                if potential['bond_type'] == 'harmonic':
+                    #atype_name1, atype_name2, bond_length, K = potential[1:]
+                    atype_name1 = potential['atype1']
+                    atype_name2 = potential['atype2']
+                    bond_length = potential['length']
+                    K = potential['K']
                     #print('{},{},{},{}'.format(ai.name,aj.name,atype_name1,atype_name2))
                     if (ai.name, aj.name) in [ (atype_name1, atype_name2) , (atype_name2, atype_name1) ]:
                         applicable_potentials.append(potential)
@@ -258,7 +262,7 @@ def createOMMSys(my_top, verbose = False):
                 raise OMMError("no bonded potential nor constraint found for bond {} in mol {}".format(bond,mol.name))
     if bond_ffs:                
         system.addForce(bonded_force)
-
+    print('')
 
     #=====================================================
     #create custom nonbonded force: Gaussian + ShortRange#
@@ -277,7 +281,45 @@ def createOMMSys(my_top, verbose = False):
     ag, u0, dist0, rcut, indv_gaussians = parsevalidate.parseGaussian( my_top.system_specs )
     if indv_gaussians:
         print("---> Found individual gaussians interactions")
-        print("CAUTION, NOT IMPLEMENTED YET!")
+        print("CAUTION, Inefficient if manually layering a lot of interactions!")
+        
+        for ii,entry in enumerate(indv_gaussians):
+            typ1,typ2,_ag,_u0,cut = entry[1:]
+            print('...adding {}'.format(entry))
+
+            B_name = 'B{}'.format(ii)
+            kappa_name = 'kappa{}'.format(ii)
+            energy_function =  'LJ + Gaussian - CutoffShift;'
+            energy_function += 'Gaussian = {B}*exp(-{kappa}*r^2);'.format(B=B_name,kappa=kappa_name)
+            energy_function += 'LJ = 0;'
+            #energy_function += 'LJ = 4*eps(type1,type2)*(rinv12 - rinv6);'
+            #energy_function += 'rinv12 = rinv6^2;'
+            energy_function += 'CutoffShift = {B}*exp(-{kappa}*({cut})^2);'.format(B=B_name,kappa=kappa_name,cut=cut)
+
+            fcnbg = openmm.CustomNonbondedForce(energy_function)
+            fcnbg.setCutoffDistance( cut )
+            nonbondedMethod = 2
+            fcnbg.setNonbondedMethod( nonbondedMethod ) #2 is cutoff periodic
+
+            fcnbg.addGlobalParameter(B_name, _u0/(4*np.pi*_ag*_ag)**1.5)
+            fcnbg.addGlobalParameter(kappa_name, 1/4/_ag/_ag)
+
+            typ1_inds = []
+            typ2_inds = []
+            for atom in top.atoms():
+                fcnbg.addParticle()
+                if atom.name == typ1:
+                    typ1_inds.append(atom.index)
+                if atom.name == typ2:
+                    typ2_inds.append(atom.index)
+
+            fcnbg.addInteractionGroup( set(typ1_inds), set(typ2_inds) )
+            print('......added {} interaction groups'.format(fcnbg.getNumInteractionGroups()))
+
+            system.addForce(fcnbg)
+
+
+
     if len(ag) != 0 and len(u0) !=0 and len(dist0) != 0 and rcut is not None:
         print("---> Found gaussians interactions matrix")
         nspec = len(my_top.atom_types)
@@ -328,7 +370,7 @@ def createOMMSys(my_top, verbose = False):
     #=====================================
     uext_ffs = parsevalidate.parseUExt( my_top.system_specs )
     if uext_ffs:
-        print("---> Found External Force")
+        print("\n---> Found External Force")
     #TODO: possibly allow the period length to be changed
     direction=['x','y','z']
 
@@ -341,23 +383,24 @@ def createOMMSys(my_top, verbose = False):
         n_period = potential[3]
         axis = potential[4]
         offset = potential[5]
+        
+        if Uext !=0.:
+            external={"planeLoc":offset, "ax":axis, "U":Uext*epsilon.value_in_unit(unit.kilojoule/unit.mole), "NPeriod":n_period}
 
-        external={"planeLoc":offset, "ax":axis, "U":Uext*epsilon.value_in_unit(unit.kilojoule/unit.mole), "NPeriod":n_period}
+            print("...Adding external potential: Uext={}, NPeriod={}, axis={}".format(external["U"],external["NPeriod"],external["ax"]))
+            print("......with atom types: {}".format(type_names_in_potential))
+            energy_function = 'U*sin(2*{pi}*NPeriod*(r-{r0})/{L}); r={axis};'.format(pi=np.pi, L=box_edge[external["ax"]], r0=external["planeLoc"], axis=direction[external["ax"]])
+            print('...{}'.format(energy_function))
+            f_exts.append( openmm.CustomExternalForce(energy_function) )
+            f_exts[-1].addGlobalParameter("U", external["U"])
+            f_exts[-1].addGlobalParameter("NPeriod", external["NPeriod"])
 
-        print("...Adding external potential: Uext={}, NPeriod={}, axis={}".format(external["U"],external["NPeriod"],external["ax"]))
-        print("......with atom types: {}".format(type_names_in_potential))
-        energy_function = 'U*sin(2*{pi}*NPeriod*(r-{r0})/{L}); r={axis};'.format(pi=np.pi, L=box_edge[external["ax"]], r0=external["planeLoc"], axis=direction[external["ax"]])
-        print('...{}'.format(energy_function))
-        f_exts.append( openmm.CustomExternalForce(energy_function) )
-        f_exts[-1].addGlobalParameter("U", external["U"])
-        f_exts[-1].addGlobalParameter("NPeriod", external["NPeriod"])
-
-        for ia,atom in enumerate(top.atoms()):
-            if atom.name in type_names_in_potential:
-                print('adding atom {} {} to external force'.format(ia,atom.name))
-                f_exts[-1].addParticle( ia,[] )
-                
-        system.addForce(f_exts[-1])
+            for ia,atom in enumerate(top.atoms()):
+                if atom.name in type_names_in_potential:
+                    print('adding atom {} {} to external force'.format(ia,atom.name))
+                    f_exts[-1].addParticle( ia,[] )
+                    
+            system.addForce(f_exts[-1])
              
 
     for f in f_exts:
@@ -369,8 +412,10 @@ def createOMMSys(my_top, verbose = False):
     #================================
     lb, ewald_cut, ewald_tolerance, a_born = parsevalidate.parseElec( my_top.system_specs )
 
+    has_electrostatics = False
     if lb is not None:
         has_electrostatics = True
+
     if has_electrostatics and lb > 0.:
         nbfmethod = openmm.NonbondedForce.PME 
         print("To implement in OMM, unit charge is now {}".format(q_factor))
@@ -430,7 +475,7 @@ def createOMMSys(my_top, verbose = False):
 # ============================== #
 
 
-def createOMMSimulation( system_specs, system, top, Prefix="", chkfile='chkpnt.chk', verbose=False):
+def createOMMSimulation( system_specs, system, top, prefix="", chkfile='chkpnt.chk', verbose=False):
     # --- integration options ---
     # TODO: NPT
     sim_options,run_options = parsevalidate.parseSimulation( system_specs )
@@ -462,18 +507,18 @@ def createOMMSimulation( system_specs, system, top, Prefix="", chkfile='chkpnt.c
     #===========================
     ## Prepare the Simulation ##
     #===========================
-    print("=== Preparing Simulation ===")
+    print("\n=== Preparing Simulation ===")
     if useNPT:
         pressure = pressure * epsilon/N_av/sigma/sigma/sigma #convert from unitless to OMM units
         barostatInterval = sim_options['barostat_freq'] #in units of time steps. 25 is OpenMM default
         if sim_options['barostat_axis'] in ['isotropic','iso','all','xyz']:
             my_barostat = openmm.MonteCarloBarostat(pressure, temperature, barostatInterval)
         elif sim_options['barostat_axis'] in [0,'x','X']:
-            my_barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(pressure*unit.bar, pressure*unit.bar, pressure*unit.bar), temperature, True, False, False, barostatInterval)
+            my_barostat = openmm.MonteCarloAnisotropicBarostat(openmm.vec3.Vec3(pressure, pressure, pressure), temperature, True, False, False, barostatInterval)
         elif sim_options['barostat_axis'] in [1,'y','Y']:
-            my_barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(pressure*unit.bar, pressure*unit.bar, pressure*unit.bar), temperature, False, True, False, barostatInterval)
+            my_barostat = openmm.MonteCarloAnisotropicBarostat(openmm.vec3.Vec3(pressure, pressure, pressure), temperature, False, True, False, barostatInterval)
         elif sim_options['barostat_axis'] in [2,'z','Z']:
-            my_barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(pressure*unit.bar, pressure*unit.bar, pressure*unit.bar), temperature, False, False, True, barostatInterval)
+            my_barostat = openmm.MonteCarloAnisotropicBarostat(openmm.vec3.Vec3(pressure, pressure, pressure), temperature, False, False, True, barostatInterval)
         
         system.addForce(my_barostat)
         
@@ -483,7 +528,7 @@ def createOMMSimulation( system_specs, system, top, Prefix="", chkfile='chkpnt.c
 
     if sim_options['T'] is None:
         print("This is a constant energy, constant volume (NVE) run.")
-        integrator = mm.VerletIntegrator(dt)
+        integrator = openmm.VerletIntegrator(dt)
     else:
         if sim_options['thermostat'] == 'langevin':
             print("This is a NVT run with langevin thermostat")
@@ -518,13 +563,14 @@ def createOMMSimulation( system_specs, system, top, Prefix="", chkfile='chkpnt.c
             platform = openmm.Platform.getPlatformByName('CPU')
         simulation = app.Simulation(top,system, integrator, platform)
 
-    chkfile = Prefix + chkfile
+    chkfile = prefix + chkfile
     chkpt_freq = 10000
     simulation.reporters.append(app.checkpointreporter.CheckpointReporter(chkfile,chkpt_freq))
 
     # --- done ---
     #simOptions = {'dt':dt, 'temp':temperature, 'fric':friction}
     sim_options['temp_dimensionful'] = temperature
+    print("")
     print("Parsed simulation options: {}".format(sim_options))
     print("Parsed runtime options: {}".format(run_options))
     return simulation, sim_options, run_options 
@@ -533,22 +579,27 @@ def createOMMSimulation( system_specs, system, top, Prefix="", chkfile='chkpnt.c
 # ============================== #
 
 
-def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min = None, nsteps_equil = None, nsteps_prod = None, write_freq = None, protocol = None, protocolArgs={}, TrajFile = "trj.dcd"):
+def runOpenMM(my_top, init_xyz = None, prefix = "", verbose = False, nsteps_min = None, nsteps_equil = None, nsteps_prod = None, write_freq = None, protocol = None, protocolArgs={}, TrajFile = "trj.dcd"):
     "Run OpenMM. Returns OMMFiles (initial pdb, equilibration pdb, final pdb, dcd, thermo log, output log, simulation preamble, return_code)"
     """
+    Parameters
+    ----------
+    my_top : chemlib topology object
     protocol : None, function
         if a function, should have function signature protocol(simulation, sim_options, run_options, **protocolArgs)
-
+    
+    Notes
+    -----
     """
     openMM_files = []
     # --- Get OMM System and Simulation ---
-    system,top,mdtrajtop = createOMMSys(my_top,verbose)
-    simulation,sim_options,run_options = createOMMSimulation(my_top.system_specs, system, top, Prefix,verbose=verbose)
+    system, top, mdtrajtop = createOMMSys(my_top, verbose)
+    simulation, sim_options, run_options = createOMMSimulation(my_top.system_specs, system, top, prefix, verbose=verbose)
 
     # --- simulation options ---
-    TrajFile = Prefix + TrajFile
-    EqLogFile = Prefix + "eqlog.txt"
-    LogFile = Prefix + "prodlog.txt"
+    TrajFile = prefix + TrajFile
+    EqLogFile = prefix + "eqlog.txt"
+    LogFile = prefix + "prodlog.txt"
     openMM_files.append(LogFile)
 
     if nsteps_min is not None:
@@ -559,36 +610,38 @@ def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min 
 
     if nsteps_equil is not None: 
         print("Overriding nsteps_equil")
-        run_options['nsteps_equil'] = nsteps_equil
+        run_options['ntau_equil'] = int(nsteps_equil*sim_options['dt'])
     else:
-        nsteps_equil = run_options['nsteps_equil']
+        nsteps_equil = int(run_options['ntau_equil']/sim_options['dt'])
 
     if nsteps_prod is not None: 
         print("Overriding nsteps_prod")
-        run_options['nsteps_prod'] = nsteps_prod
+        run_options['ntau_prod'] = int(nsteps_prod*sim_options['dt'])
     else:
-        nsteps_prod = run_options['nsteps_prod']
+        nsteps_prod = int(run_options['ntau_prod']/sim_options['dt'])
 
     if write_freq is not None:
         print("Overriding write_freq")
-        run_options['write_freq'] = write_freq
+        run_options['write_freq'] = int(write_freq*sim_options['dt'])
     else:
-        write_freq = run_options['write_freq']
+        write_freq = int(run_options['write_freq']/sim_options['dt'])
 
     # --- Init ---
-    print("=== Initializing Simulation ===")
-   
-    #... need to make molecules whole
+    print("\n=== Initializing Simulation ===")
     Lx, Ly, Lz = parsevalidate.parseBox( my_top.system_specs['SystemOptions'] )
     unitcell_lengths = np.array([Lx,Ly,Lz])
     unitcell_angles = np.array([90., 90., 90.])
- 
+
+    #... need to make molecules whole
+    print(init_xyz)
     if init_xyz is None:
         if run_options['initial'].lower() in ['rand','random']:
             print("Chose random initial coordinates")
             pos = np.random.random( (my_top.num_atoms, 3) ) * unitcell_lengths
         else:
+            print("Reading in {}".format(run_options['initial']))
             pos = mdtraj.load( run_options['initial'] )
+            pos = pos.xyz[0].copy()
     elif type(init_xyz) == np.ndarray:
         print("Overriding run_options with init_xyz array")
         pos = init_xyz.copy()
@@ -609,48 +662,48 @@ def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min 
         simulation.context.setPositions(pos)
 
     #...files
-    init_state_file = Prefix + 'output.xml'
+    init_state_file = prefix + 'output.xml'
     simulation.saveState(init_state_file)
     openMM_files.append(init_state_file)
-    initialpdb = Prefix + "initial.pdb"
+    initial_pdb = prefix + "initial.pdb"
     initial_positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
-    app.PDBFile.writeModel(simulation.topology, initial_positions, open(initialpdb,'w'))
-    openMM_files.append(initialpdb)
+    app.PDBFile.writeModel(simulation.topology, initial_positions, open(initial_pdb,'w'))
+    openMM_files.append(initial_pdb)
 
     #TODO: apply constraint tolerance
     #if system.getNumConstraints() > 0:
     if True:
         simulation.context.applyConstraints(CONSTRAINT_TOLERANCE)
-        constrained_pdb = Prefix + "constrained.pdb"
+        constrained_pdb = prefix + "constrained.pdb"
         constrained_positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
         app.PDBFile.writeModel(simulation.topology, constrained_positions, open(constrained_pdb,'w'))
         openMM_files.append(constrained_pdb)
 
 
     if nsteps_min > 0:
-        print("=== Running energy minimization ===")
-        minimizefile = Prefix + "minimized.pdb"
+        print("\n=== Running energy minimization ===")
+        minimize_file = prefix + "minimized.pdb"
         simulation.minimizeEnergy(maxIterations=nsteps_min)
         if sim_options['T'] is not None:
             simulation.context.setVelocitiesToTemperature(sim_options["temp_dimensionful"]*3)
         minimized_positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
-        app.PDBFile.writeModel(simulation.topology, minimized_positions, open(minimizefile,'w'))
-        openMM_files.append(minimizefile)
+        app.PDBFile.writeModel(simulation.topology, minimized_positions, open(minimize_file,'w'))
+        openMM_files.append(minimize_file)
 
     # --- Equilibrate ---
-    print('=== Equilibrating ===')
+    print('\n=== Equilibrating ===')
     simulation.reporters.append(app.StateDataReporter(sys.stdout, write_freq*100, step=True, potentialEnergy=True, kineticEnergy=True, temperature=True, volume=True, density=True, speed=True, separator='\t'))
     simulation.reporters.append(app.StateDataReporter(EqLogFile, write_freq, step=True, potentialEnergy=True, kineticEnergy=True, temperature=True, volume=True, density=True, speed=True, separator='\t'))
     print("Progress will be reported every {} steps".format(write_freq))
     simulation.step(nsteps_equil)
-    equilibrate_file = Prefix + "equilibrated.pdb"
+    equilibrate_file = prefix + "equilibrated.pdb"
     equilibrated_positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
     app.PDBFile.writeModel(simulation.topology, equilibrated_positions, open(equilibrate_file,'w'))
     openMM_files.append(equilibrate_file)
     
 
     # --- Production ---
-    print('=== Production {} steps total, {} tau total ({}) ==='.format(nsteps_prod, nsteps_prod*sim_options['dt'], nsteps_prod*sim_options['dt']*tau ))
+    print('\n=== Production {} steps total, {} tau total ({}) ==='.format(nsteps_prod, sim_options['dt']*nsteps_prod, sim_options['dt']*nsteps_prod*tau ))
     simulation.reporters.pop()
     simulation.reporters.append(app.StateDataReporter(LogFile, write_freq, step=True, potentialEnergy=True, kineticEnergy=True, temperature=True, volume=True, density=True, speed=True, separator='\t'))
     simulation.reporters.append(mdtraj.reporters.DCDReporter(TrajFile,write_freq))
@@ -661,7 +714,7 @@ def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min 
         run_options['protocol'] = protocol.__name__
         protocol(simulation, sim_options, run_options)
     elif run_options['protocol'] in ['tension']:
-        print("---> Running tension protcol")
+        print("---> Running tension protocol")
 
         tension_options = {}
         tension_options['tension_dimless'] = sim_options['tension'] # kT/sig^2
@@ -671,7 +724,7 @@ def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min 
         #tension_options['temp_dimless'] = sim_options['temp_dimensionful']/unit.kelvin # dimless
         tension_options['temp_dimless'] = sim_options['T']
         tension_options['tension_freq'] = sim_options['tension_freq'] # int
-        tension_options['nblocks'] = int( np.round( run_options['nsteps_prod']/tension_options['tension_freq']) )
+        tension_options['nblocks'] = int( np.round(run_options['nsteps_prod']/tension_options['tension_freq']) )
 
         tension_options['alpha_scale'] = sim_options['tension_alphascale']
         tension_options['Amax'] = sim_options['tension_Amax']
@@ -687,7 +740,15 @@ def runOpenMM(my_top, init_xyz = None, Prefix = "", verbose = False, nsteps_min 
 
 
     end = time.time()
-    print("=== Finished production in {} seconds".format(end-start))
+
+    final_pdb = prefix + "final.pdb"
+    final_positions = simulation.context.getState(getPositions=True, enforcePeriodicBox=True).getPositions()
+    app.PDBFile.writeModel(simulation.topology, final_positions, open(final_pdb,'w'))
+    openMM_files.append(final_pdb)
+
+
+    
+    print("\n=== Finished production in {} seconds".format(end-start))
     print("run_options script, including overrides: {}".format(run_options))
 
     # --- Returns ---
@@ -712,6 +773,7 @@ def runTension( simulation, tension_dimless, axis, temp_dimless, tension_freq, n
         default = 3, s.t. A = A0/2 yields a tension that roughly cancels the applied tension
 
     Notes
+    -----
     restoring force is given by alpha * (L-L0)^2
         I set alpha = alpha_scale / (1 - sqrt(1/Amax))
         alpa_scale is magnitude of the tension
@@ -735,7 +797,7 @@ def runTension( simulation, tension_dimless, axis, temp_dimless, tension_freq, n
     #temp_dimensionful = temp_dimless * unit.kelvin
     
     scaling = 1+dAfrac
-    scalieNormal = 1/scaling
+    scaleNormal = 1/scaling
     scaleTangent = scaling**0.5
 
     tangents = np.mod([axis-1, axis+1],2)

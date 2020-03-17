@@ -462,7 +462,7 @@ class Topology(object):
         molname : str
         """
         if molname in self.molecule_types.keys():
-            print('adding {}'.format(molname))
+            if VVerbose: print('adding {}'.format(molname))
             old_num_atoms = len(self.atoms)
 
             this_mol_type = self.molecule_types[molname]

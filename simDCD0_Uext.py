@@ -55,7 +55,7 @@ def add_barostat(system,args):
         logger.info("Anisotropic box scaling is %s" % ("ON" if args.anisotropic else "OFF"))
         if args.anisotropic:
             logger.info("Only the Z-axis will be adjusted")
-            barostat = mm.MonteCarloAnisotropicBarostat(Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
+            barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
         else:
             barostat = mm.MonteCarloBarostat(args.pressure * u.bar, args.temperature * u.kelvin, args.nbarostat)
         system.addForce(barostat)

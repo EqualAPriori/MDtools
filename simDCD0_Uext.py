@@ -53,8 +53,33 @@ def add_barostat(system,args):
         logger.info("This is a constant pressure (NPT) run at %.2f bar pressure" % args.pressure)
         logger.info("Adding Monte Carlo barostat with volume adjustment interval %i" % args.nbarostat)
         logger.info("Anisotropic box scaling is %s" % ("ON" if args.anisotropic else "OFF"))
-        if args.anisotropic:
-            logger.info("Only the Z-axis will be adjusted")
+        #if args.tension > 0:
+        if (args.tension is not None) and args.restoring_scale == 0.:
+            logger.info('...detected tension, but no extra nonlinear restoring force, using openMM Membrane Barostat...')
+            logger.info('...openMM MembraneBarostat only accepts z-axis, be warned!')
+            logger.info('...setting tension {} bar*nm'.format(args.tension))
+            #print('...assume tension is given in bar*nm'
+            #tension = args.tension * u.bar*u.nanometer
+            #tension = tension.value_in_unit(u.bar*u.nanometer)
+            XYmode = mm.MonteCarloMembraneBarostat.XYIsotropic
+            Zmode = mm.MonteCarloMembraneBarostat.ZFree
+            barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar, args.tension, args.temperature * u.kelvin, XYmode, Zmode, args.nbarostat)
+        elif args.tension is not None and args.restoring_scale != 0.:
+            logger.info("Only the Z-axis will be adjusted for NPT moves, keep Volume constant when perturbing area")
+            barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
+            raise ValueError('Restoring scale not zero, should use simDCD0_Tension.py script instead')
+            '''
+            logger.info("Tension={} > 0, using Membrane Barostat with z-mode {}".format(args.tension, args.zmode))
+            if args.anisotropic:
+                logger.info("XY-axes will change length independently")
+                XYmode = mm.MonteCarloMembraneBarostat.XYAnisotropic
+            else:
+                XYmode = mm.MonteCarloMembraneBarostat.XYIsotropic
+            #barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension*u.bar*u.nanometer,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+            barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
+            '''
+        elif args.anisotropic:
+            logger.info("Just a barostat, only the Z-axis will be adjusted")
             barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
         else:
             barostat = mm.MonteCarloBarostat(args.pressure * u.bar, args.temperature * u.kelvin, args.nbarostat)
@@ -345,6 +370,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         elif incoord.split(".")[-1]=="xyz":
             traj = mdtraj.load(incoord, top = mdtraj.Topology.from_openmm(simulation.topology))
             simulation.context.setPositions( traj.openmm_positions(0) )
+
         elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
             print('Set positions from xml, {}'.format(incoord))
@@ -462,12 +488,27 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         Prog.t00 = t1
     #simulation.step(args.production)
 
+    boxsizes = np.zeros([nblocks,3])
     for iblock in range(0,nblocks):
         logger.info("Starting block {}".format(iblock))
         start = time.time()
         simulation.step(blocksteps)
         end = time.time()
         logger.info('Took {} seconds for block {}'.format(end-start,iblock))
+        thisbox = simulation.context.getState().getPeriodicBoxVectors()
+        logger.info('Box size: {}'.format(thisbox)) 
+        boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
+
+
+        if args.tension is not None and np.mod(iblock,100) != 0:
+            continue
+        else:
+            simulation.saveState(checkpointxml)
+            positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+            app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+            np.savetxt('boxdimensions.dat',boxsizes)
+
+
 
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()

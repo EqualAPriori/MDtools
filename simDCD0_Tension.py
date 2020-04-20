@@ -62,7 +62,18 @@ def add_barostat(system,args):
         logger.info("This is a constant pressure (NPT) run at %.2f bar pressure" % args.pressure)
         logger.info("Adding Monte Carlo barostat with volume adjustment interval %i" % args.nbarostat)
         logger.info("Anisotropic box scaling is %s" % ("ON" if args.anisotropic else "OFF"))
-        if args.tension > 0:
+        #if args.tension > 0:
+        if (args.tension is not None) and args.restoring_scale == 0.:
+            logger.info('...detected tension, but no extra nonlinear restoring force, using openMM Membrane Barostat...')
+            logger.info('...openMM MembraneBarostat only accepts z-axis, be warned!')
+            logger.info('...setting tension {} bar*nm'.format(args.tension))
+            #print('...assume tension is given in bar*nm'
+            #tension = args.tension * u.bar*u.nanometer
+            #tension = tension.value_in_unit(u.bar*u.nanometer)
+            XYmode = mm.MonteCarloMembraneBarostat.XYIsotropic
+            Zmode = mm.MonteCarloMembraneBarostat.ZFree
+            barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar, args.tension, args.temperature * u.kelvin, XYmode, Zmode, args.nbarostat)
+        elif args.tension is not None and args.restoring_scale != 0.:
             logger.info("Only the Z-axis will be adjusted for NPT moves, keep Volume constant when perturbing area")
             barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
 
@@ -77,7 +88,7 @@ def add_barostat(system,args):
             barostat = mm.MonteCarloMembraneBarostat(args.pressure*u.bar,args.tension,args.temperature*u.kelvin,XYmode,args.zmode,args.nbarostat) 
             '''
         elif args.anisotropic:
-            logger.info("Only the Z-axis will be adjusted")
+            logger.info("Just a barostat, only the Z-axis will be adjusted")
             barostat = mm.MonteCarloAnisotropicBarostat(mm.vec3.Vec3(args.pressure*u.bar, args.pressure*u.bar, args.pressure*u.bar), args.temperature*u.kelvin, False, False, True, args.nbarostat)
         else:
             barostat = mm.MonteCarloBarostat(args.pressure * u.bar, args.temperature * u.kelvin, args.nbarostat)
@@ -301,6 +312,9 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
     if fnb.getNonbondedMethod()==3:
         PMEparam = fnb.getPMEParametersInContext(simulation.context)
         logger.info(fnb.getPMEParametersInContext(simulation.context))
+    if fnb.getNonbondedMethod() == 5: #check for LJPME
+        PMEparam = fnb.getLJPMEParametersInContext(simulation.context)
+        logger.info(fnb.getLJPMEParametersInContext(simulation.context))
     #nmeshx = int(PMEparam[1]*1.5)
     #nmeshy = int(PMEparam[2]*1.5)
     #nmeshz = int(PMEparam[3]*1.5)
@@ -361,7 +375,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         elif incoord.split(".")[-1]=="xyz":
             traj = mdtraj.load(incoord, top = mdtraj.Topology.from_openmm(simulation.topology))
             simulation.context.setPositions( traj.openmm_positions(0) )
-            print('Set positions from xyz, {}'.format(incoord))
+
         elif incoord.split(".")[-1]=="xml":
             simulation.loadState(incoord)
             print('Set positions from xml, {}'.format(incoord))
@@ -492,8 +506,11 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         logger.info('Box size: {}'.format(thisbox)) 
         boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
 
-        if args.tension > 0:
-            logger.info('=== Attempting area change ===')
+
+        #if args.tension > 0:
+
+        if args.tension is not None and args.restoring_scale != 0.:
+            logger.info('=== Attempting area change manually ===')
             #--- Assumes args.tension in units of bar*nm ---
             kBT = u.AVOGADRO_CONSTANT_NA * u.BOLTZMANN_CONSTANT_kB * args.temperature * u.kelvin
             tension = args.tension*u.bar*u.nanometer*u.AVOGADRO_CONSTANT_NA
@@ -565,7 +582,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         #finish membrane barostating
 
 
-        if args.tension > 0.0 and np.mod(iblock,100) != 0:
+        if args.tension is not None and np.mod(iblock,100) != 0:
             continue
         else:
             simulation.saveState(checkpointxml)

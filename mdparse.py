@@ -678,11 +678,11 @@ class SimulationOptions(object):
         self.set_active('pressure',0.0,float,"Simulation pressure; set a positive number to activate.",
                         clash=(self.temperature <= 0.0),
                         msg="For constant pressure simulations, the temperature must be finite")
-        self.set_active('tension',0.0,float,"Simulation surface tension; set a positive number to activate Monte Carlo membrane Barostat. Must have pressure > 0 as well. units bar*nm",
+        self.set_active('tension',None,float,"Simulation surface tension; set a positive number to activate Monte Carlo membrane Barostat. Must have pressure > 0 as well. units bar*nm",
                         clash=(self.temperature <= 0.0),
                         msg="For constant tension simulations, the temperature must be finite and pressure > 0")
         self.set_active('restoring_scale',0.0,float," Scale of harmonic restoring tension. Must have tension > 0 as well to have an effect. units bar*nm",
-                        clash=(self.temperature <= 0.0),depend=("tension" in self.ActiveOptions and self.tension > 0.0),
+                        clash=(self.temperature <= 0.0),depend=("tension" in self.ActiveOptions and self.tension is not None),
                         msg="For constant tension simulations, the temperature must be finite and pressure > 0")
         self.set_active('zmode',0,int,"Z(long)-axis mode. 0:Z-free, 1: Z-fixed, 2:Z-changed proportionally to maintain constant volume.",
                         allowed=[0,1,2],clash=(self.temperature <= 0.0),

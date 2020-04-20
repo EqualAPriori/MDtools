@@ -212,6 +212,7 @@ def createOMMSys(my_top, verbose = False):
     #a) harmonic bonds
     #b) Gaussian repulsion
     #c) external force
+    #d) LJ
 
     #TODO:
     #-) spline/tabulated [would then need to implement a library of function evaluations...]
@@ -365,6 +366,45 @@ def createOMMSys(my_top, verbose = False):
         system.addForce(fcnb)
 
 
+    # === LJ interactions ===
+    sig,eps,rcut,shift,long_range = parsevalidate.parseLJ( my_top.system_specs )
+    if len(sig) > 0:
+        print("---> Found LJ interactions matrix")
+        nspec = len(my_top.atom_types)
+        if sig.shape[0] != nspec:
+            raise ValueError("LJ Base sigma matrix incorrectly sized")
+        if eps.shape[0] != nspec:
+            raise ValueError("LJ Base epsilon matrix incorrectly sized")
+
+        print("... Detected cutoff: {}".format(rcut))
+        GlobalCut = rcut
+        nonbondedMethod = 2
+
+        print("... sigma matrix:\n{}".format(sig))
+        print("... epsilon matrix:\n{}".format(eps))
+        epsmatrix = eps
+        sigmatrix = sig
+
+        energy_function =  'LJ - {}*CutoffShift;'.format(int(shift))
+        energy_function += 'LJ = 4*LJeps(type1,type2)*(rinv12 - rinv6);'
+        energy_function += 'rinv12 = rinv6^2;'
+        energy_function += 'rinv6 = (LJsig(type1,type2)/r)^6;'
+        energy_function += 'CutoffShift = 4*LJeps(type1,type2)*( (LJsig(type1,type2)/{0})^12 - (LJsig(type1,type2)/{0})^6 );'.format(GlobalCut)
+
+        fcnbLJ = openmm.CustomNonbondedForce(energy_function)
+        fcnbLJ.addPerParticleParameter('type')
+        fcnbLJ.setCutoffDistance( GlobalCut )
+        fcnbLJ.setNonbondedMethod( nonbondedMethod ) #2 is cutoff periodic
+        fcnbLJ.setUseLongRangeCorrection( long_range )
+
+        fcnbLJ.addTabulatedFunction('LJeps', openmm.Discrete2DFunction(nspec,nspec,epsmatrix.ravel(order='F')) )
+        fcnbLJ.addTabulatedFunction('LJsig', openmm.Discrete2DFunction(nspec,nspec,sigmatrix.ravel(order='F')) )
+        for atom in top.atoms():
+            fcnbLJ.addParticle( [atom_type_index[atom.name]] )
+        system.addForce(fcnbLJ)
+
+
+
     #===================================== 
     #--- create the external potential ---
     #=====================================
@@ -463,7 +503,8 @@ def createOMMSys(my_top, verbose = False):
         fcnb.addTabulatedFunction('aborn',openmm.Discrete2DFunction(nspec, nspec, a_born_matrix.ravel(order='F')))
         for ia,atom in enumerate(top.atoms()):
             q = my_top.atoms[ia].charge
-            print("atom {} has charge {}".format(ia,q))
+            if q != 0.0:
+                print("atom {} has charge {}".format(ia,q))
             fcnb.addParticle( [atom_type_index[atom.name], q] )
         system.addForce(fcnb)
 
@@ -511,7 +552,23 @@ def createOMMSimulation( system_specs, system, top, prefix="", chkfile='chkpnt.c
     if useNPT:
         pressure = pressure * epsilon/N_av/sigma/sigma/sigma #convert from unitless to OMM units
         barostatInterval = sim_options['barostat_freq'] #in units of time steps. 25 is OpenMM default
-        if sim_options['barostat_axis'] in ['isotropic','iso','all','xyz']:
+
+        if sim_options['tension'] is not None and sim_options['tension_alphascale'] == 0.:
+            print('...detected tension, but no extra nonlinear restoring force, using openMM Membrane Barostat...')
+            print('...overriding tension_freq {} with barostat_freq {}'.format(sim_options['tension_freq'],barostatInterval))
+            if sim_options['tension_axis'] != 2: 
+                raise ValueError('...openMM MembraneBarostat only accepts z-axis, but input script requested axis {}')
+            tension = sim_options['tension'] * epsilon/sigma/sigma
+            print('... applying tension of {}kT/sig^2'.format( sim_options['tension'] ))
+            print('... in OpenMM natural units: {}'.format(tension))
+            tension = (tension/N_av).value_in_unit(unit.bar*unit.nanometer) #to convert to bar*nm units
+            print('... in bar*nm: {}'.format(tension))
+            #see https://github.com/openmm/openmm/issues/2438, can't include explicit units for tension...
+            XYmode = openmm.MonteCarloMembraneBarostat.XYIsotropic
+            Zmode = openmm.MonteCarloMembraneBarostat.ZFree
+            my_barostat = openmm.MonteCarloMembraneBarostat(pressure, tension, temperature, XYmode, Zmode, barostatInterval)
+
+        elif sim_options['barostat_axis'] in ['isotropic','iso','all','xyz']:
             my_barostat = openmm.MonteCarloBarostat(pressure, temperature, barostatInterval)
         elif sim_options['barostat_axis'] in [0,'x','X']:
             my_barostat = openmm.MonteCarloAnisotropicBarostat(openmm.vec3.Vec3(pressure, pressure, pressure), temperature, True, False, False, barostatInterval)
@@ -531,7 +588,7 @@ def createOMMSimulation( system_specs, system, top, prefix="", chkfile='chkpnt.c
         integrator = openmm.VerletIntegrator(dt)
     else:
         if sim_options['thermostat'] == 'langevin':
-            print("This is a NVT run with langevin thermostat")
+            print("This is a thermostatted run with langevin thermostat")
             integrator = openmm.LangevinIntegrator(temperature, friction, dt)
         else:
             raise OMMError("Specified temperature but unsupported thermostat {}".format(sim_options['thermostat']))
@@ -724,13 +781,17 @@ def runOpenMM(my_top, init_xyz = None, prefix = "", verbose = False, nsteps_min 
         #tension_options['temp_dimless'] = sim_options['temp_dimensionful']/unit.kelvin # dimless
         tension_options['temp_dimless'] = sim_options['T']
         tension_options['tension_freq'] = sim_options['tension_freq'] # int
-        tension_options['nblocks'] = int( np.round(run_options['nsteps_prod']/tension_options['tension_freq']) )
+        tension_options['nblocks'] = int( np.round(nsteps_prod/tension_options['tension_freq']) )
 
         tension_options['alpha_scale'] = sim_options['tension_alphascale']
         tension_options['Amax'] = sim_options['tension_Amax']
         
-
-        runTension(simulation, **tension_options)
+        #if useOpenMMTension:
+        if sim_options['tension'] is not None and sim_options['tension_alphascale'] == 0.:
+            print("---> using OpenMM's MembraneBarostat to do tension simulation")
+            simulation.step(nsteps_prod)
+        else: #use my custom protocol to allow for extra restoring force
+            runTension(simulation, **tension_options)
     elif run_options['protocol'].lower() in ['simple','null']:
         print("---> selected simple protocol")
         simulation.step(nsteps_prod)

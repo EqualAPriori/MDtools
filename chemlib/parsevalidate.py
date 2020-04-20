@@ -82,6 +82,68 @@ def parseBond( system_specs ):
 
     return bond_ffs
 
+def parseLJ( system_specs ):
+    """
+    Parameters
+    ----------
+    system_options : Ordered Dict
+        read in from a yaml file
+
+    Returns
+    -------
+    sig : n x n matrix
+        LJ sigma, in 4eps ( (sig/r)^12 - (sig/r)^6 ) form
+    eps : n x n matrix
+        LJ epsilon, in 4eps ( (sig/r)^12 - (sig/r)^6 ) form
+    rcut : global cutoff
+    shift : whether or not to shift
+    long_range : whether or not to use long range correction
+    """
+
+    rcut = None
+    shift = True
+    long_range = False
+    sig = []
+    eps = []
+    if 'LJBase' in system_specs:
+        "allowing for shorthand definition of full matrix of interactions"
+        description = system_specs['LJBase']
+
+        rcut = float( description['rcut'] )
+        shift = bool( description['shift'] )
+        long_range = bool(description['long_range'] )
+        if shift:
+            print("shift = True, automatically set long_range= False")
+            long_range = False
+
+        
+        for row in description['sig']:
+            if isinstance(row, str):
+                sig.append(list(map(float,row.split())))
+            elif isinstance(row,list):
+                sig.append(row)
+            else:
+                sig.append(row)
+        sig = np.array(sig)
+        for row in description['eps']:
+            if isinstance(row, str):
+                eps.append(list(map(float,row.split())))
+            elif isinstance(row,list):
+                eps.append(row)
+            else:
+                eps.append(row)
+        eps = np.array(eps)
+
+        #sig  = np.array([ list(map(float,row.split())) for row in description['sig'] ])
+        #eps  = np.array([ list(map(float,row.split())) for row in description['eps'] ])
+
+        if eps.shape == sig.shape:
+            print("LJBase matrices the same size, good")
+        else:
+            raise ValueError("LJBase matrix sizes are not equal")
+
+    return [sig, eps, rcut, shift, long_range]
+
 def parseGaussian( system_specs ):
     """
     Parameters
@@ -334,6 +396,10 @@ def parseSimulation( system_specs ):
         print("CAUTION No 'RuntimeOptions' section found")
     else:
         description = system_specs['RuntimeOptions']
+        if 'minimize' in description:
+            run_options['minimize'] = description['minimize']
+        else:
+            run_options['minimize'] = False
         if 'initial' in description:
             run_options['initial'] = description['initial']
         

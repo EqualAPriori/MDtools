@@ -319,7 +319,7 @@ class Topology(object):
          HarmonicBonds
          GaussianBase
         }
-       """
+        """
         with open(topfile,'r') as stream:
             self.myyaml = yaml.YAML()
             self.system_specs = yaml.load(stream, Loader=yaml.RoundTripLoader)

@@ -582,7 +582,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         #finish membrane barostating
 
 
-        if args.tension is not None and np.mod(iblock,100) != 0:
+        if args.tension is not None and np.mod(iblock,100) != 0 and iblock!=nblocks-1:
             continue
         else:
             simulation.saveState(checkpointxml)

@@ -500,7 +500,7 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
         boxsizes[iblock,:] = [thisbox[0][0].value_in_unit(u.nanometer), thisbox[1][1].value_in_unit(u.nanometer), thisbox[2][2].value_in_unit(u.nanometer)]
 
 
-        if args.tension is not None and np.mod(iblock,100) != 0:
+        if args.tension is not None and np.mod(iblock,100) != 0 and (iblock != nblocks-1):
             continue
         else:
             simulation.saveState(checkpointxml)

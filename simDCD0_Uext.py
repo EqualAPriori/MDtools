@@ -508,7 +508,11 @@ def main(paramfile='params.in', overrides={}, quiktest=False, deviceid=None, pro
             app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
             np.savetxt('boxdimensions.dat',boxsizes)
 
-
+        if args.tension is None:
+            simulation.saveState(checkpointxml)
+            positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()
+            app.PDBFile.writeFile(simulation.topology, positions, open(checkpointpdb, 'w')) 
+            np.savetxt('boxdimensions.dat',boxsizes)
 
         simulation.saveState(checkpointxml)
         positions = simulation.context.getState(getPositions=True,enforcePeriodicBox=True).getPositions()

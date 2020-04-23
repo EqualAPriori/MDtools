@@ -10,10 +10,19 @@ import time
 import numpy as np
 import argparse as ap
 
+"""
+import logging
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel('INFO')
+sh = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter(fmt='%(asctime)s - %(message)s', datefmt="%H:%M:%S")
+sh.setFormatter(formatter)
+"""
 # OpenMM Imports
 import simtk.openmm as mm
 import simtk.openmm.app as app
-
+import simtk.unit as unit
 # ParmEd & MDTraj Imports
 from parmed import gromacs
 gromacs.GROMACS_TOPDIR = "/home/kshen/mylib/ff"
@@ -39,6 +48,7 @@ parser.add_argument('-ewldTol', default=1e-6, type=float, help="ewld tolerance. 
 parser.add_argument('-axis', default=2, choices=[0,1,2], type=int, help="long axis, 0:x, 1:y, 2:z")
 parser.add_argument('-stride',default=1, type=int, help="stride for reading trajectory")
 parser.add_argument('-volumeChange', action='store_true', help="whether or not the box size changes")
+parser.add_argument('-customff',default='', type=str, help='customff file')
 parser.add_argument('-deviceid',default=-1,type=int,help="gpu device id")
 args = parser.parse_args()
 
@@ -54,6 +64,7 @@ top_file = args.top # gromacs topology file
 box_file = args.box # 'box.gro', in future read from trajectory
 pdb_file = args.pdb # pdb file to read in trajectory
 defines = {}
+customff = args.customff
 
 # Test area parameters
 #dAfrac   = 0.00001
@@ -100,13 +111,13 @@ top2= gromacs.GromacsTopologyFile(top_file, defines=defines, box=box2)
 #top.positions = pdb.positions
 
 
-def makeSystem(topology):#, Temp, useLJPME, LJcut, tail=True, NPT=False, Pressure=1, barostatfreq=25, rigidH2O=True)
+def makeSystem(top):#, Temp, useLJPME, LJcut, tail=True, NPT=False, Pressure=1, barostatfreq=25, rigidH2O=True)
     if useLJPME:
         nbm = mm.NonbondedForce.LJPME
     else:
         nbm = mm.NonbondedForce.PME
 
-    system = topology.createSystem(nonbondedMethod=app.PME,
+    system = top.createSystem(nonbondedMethod=app.PME,
                 nonbondedCutoff=LJcut*u.angstroms,
                 constraints=app.HBonds, rigidWater=rigidH2O, ewaldErrorTolerance=ewldTol) #default ewTol=5e-4
 
@@ -129,6 +140,20 @@ def makeSystem(topology):#, Temp, useLJPME, LJcut, tail=True, NPT=False, Pressur
 		    fric/u.picoseconds,  # friction coefficient
 		    dt*u.femtoseconds, # time step
     )
+
+    if customff:
+        #logger.info("Using customff: [{}]".format(customff))
+        print("Using customff: [{}]".format(customff))
+        with open(customff,'r') as f:
+            ffcode = f.read()
+        exec(ffcode,globals(),locals()) #python 3, need to pass in globals to allow exec to modify them (i.e. the system object)
+    else:
+        #logger.info("--- No custom ff code provided ---")
+        print("--- No custom ff code provided ---")
+    for f in system.getForces():
+        print('...force {}'.format(f))
+ 
+
     return system,integrator
 
 system0, integrator0 = makeSystem(top)#, Temp=Temp, useLJPME=useLJPME, LJcut=LJcut, tail=tail, NPT=NPT, Pressure=Pressure, barostatfreq=barostatfreq, rigidH2O=rigidH2O)
@@ -291,6 +316,8 @@ np.savetxt('DeltaF_{}.dat'.format(args.outprefix),DeltaF_ij)
 np.savetxt('dDeltaF_{}.dat'.format(args.outprefix),dDeltaF_ij)
 
 # Print out one line summary 
+#tension = DeltaF_ij[0,1]/2/da * 1e18
+#tensionError = dDeltaF_ij[0,1]/2/da * 1e18
 tension = DeltaF_ij[0,1]/da * 1e18 * kT #(in J/m^2). note da already has a factor of two for the two areas!
 tensionError = dDeltaF_ij[0,1]/da * 1e18 * kT
 print('tension (pymbar): {} +/- {}N/m'.format(tension,tensionError))

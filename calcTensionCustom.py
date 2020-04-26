@@ -50,6 +50,7 @@ parser.add_argument('-stride',default=1, type=int, help="stride for reading traj
 parser.add_argument('-volumeChange', action='store_true', help="whether or not the box size changes")
 parser.add_argument('-customff',default='', type=str, help='customff file')
 parser.add_argument('-deviceid',default=-1,type=int,help="gpu device id")
+parser.add_argument('-LJPME',action='store_true', help="default is just PME, toggle for LJPME")
 args = parser.parse_args()
 
 ewldTol = args.ewldTol
@@ -77,7 +78,7 @@ scaleXY2    = (1.0 - dAfrac)**0.5
 # === Parameters, assumed, eventually should read in from mdparse ===
 T               = 298.
 NPT             = False
-useLJPME        = True  #True
+useLJPME        = args.LJPME #True  #True
 LJcut           = 12    #Angstroms
 tail            = False#False
 Temp            = T     #K
@@ -124,7 +125,7 @@ def makeSystem(top):#, Temp, useLJPME, LJcut, tail=True, NPT=False, Pressure=1, 
     ftmp = [f for ii, f in enumerate(system.getForces()) if isinstance(f,mm.NonbondedForce)]
     fnb = ftmp[0]
     fnb.setNonbondedMethod(nbm)
-    print("Nonbonded method, use LJPME: {}".format(fnb.getNonbondedMethod()) )
+    print("Nonbonded method, use: {}".format(fnb.getNonbondedMethod()) )
 
     if (not tail) or (useLJPME):
         print("Turning off tail correction...")
@@ -188,8 +189,10 @@ energies = np.zeros([traj.n_frames, 3])
 print("===== starting energy calculations =====")
 start = time.time()
 for iframe,ts in enumerate(traj):
-    if( np.mod(iframe,10)==0 ):
+    if( np.mod(iframe,10)==0 or iframe == traj.n_frames-1 ):
         print("On frame {}".format(iframe))
+        np.savetxt('{}_energies.txt'.format(args.outprefix),energies,delimiter=',', header="dA% = {} area change".format(dAfrac))
+        np.save('{}_energies'.format(args.outprefix),energies)
     
     if args.volumeChange:
         box = ts.openmm_boxes(0)
@@ -234,7 +237,8 @@ end = time.time()
 print("Took {} seconds".format(end-start))
 
 #np.savetxt('energies.txt',energies,delimiter=',',header="dA% = {} area change; Col0: Reference, Col1: +dA, Col2: -dA".format(dAfrac))
-
+np.savetxt('{}_energies.txt'.format(args.outprefix),energies,delimiter=',', header="dA% = {} area change".format(dAfrac))
+np.save('{}_energies'.format(args.outprefix),energies)
 
 # === detect correlations in energies ===
 [nequil,g,Neff_max] = timeseries.detectEquilibration(energies[:,0])
@@ -305,15 +309,15 @@ for k in range(nstates):
     u_kln[k,:,0:N_k[k]] = u_kln[k,:,indices].T
 print("...found {} uncorrelated samples...".format(N_k))
 
-np.save('ukln_{}'.format(args.outprefix),u_kln)
+np.save('{}_ukln'.format(args.outprefix),u_kln)
 
 # Compute free energy differences and statistical uncertainties
 print("=== Computing free energy differences ===")
 mbar = MBAR(u_kln, N_k)
 [DeltaF_ij, dDeltaF_ij, Theta_ij] = mbar.getFreeEnergyDifferences()
 
-np.savetxt('DeltaF_{}.dat'.format(args.outprefix),DeltaF_ij)
-np.savetxt('dDeltaF_{}.dat'.format(args.outprefix),dDeltaF_ij)
+np.savetxt('{}_DeltaF.dat'.format(args.outprefix),DeltaF_ij)
+np.savetxt('{}_dDeltaF.dat'.format(args.outprefix),dDeltaF_ij)
 
 # Print out one line summary 
 #tension = DeltaF_ij[0,1]/2/da * 1e18
@@ -322,7 +326,7 @@ tension = DeltaF_ij[0,1]/da * 1e18 * kT #(in J/m^2). note da already has a facto
 tensionError = dDeltaF_ij[0,1]/da * 1e18 * kT
 print('tension (pymbar): {} +/- {}N/m'.format(tension,tensionError))
 
-with open('results.txt',"a") as f:
+with open('{}_results.txt'.format(args.outprefix),"a") as f:
     f.write('\nUsing pymbar:\n')
     f.write('dF = {} +/- {}kT\n'.format(DeltaF_ij[0,1],dDeltaF_ij[0,1]))
     f.write('tension = {} +/- {} N/m'.format(tension, tensionError))

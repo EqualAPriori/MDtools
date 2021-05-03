@@ -4,8 +4,8 @@ from pymbar import timeseries
 
 import argparse as ap
 parser = ap.ArgumentParser(description = 'Calculate box dimension statistics')
-parser.add_argument( '-traj', type=str, default='output.dcd', help = 'trajectory file')
-parser.add_argument( '-top', type=str, default='chk_00.pdb', help = 'topology file')
+parser.add_argument( 'traj', type=str, default='output.dcd', help = 'trajectory file')
+parser.add_argument( 'top', type=str, default='chk_00.pdb', help = 'topology file')
 args = parser.parse_args()
 
 traj=args.traj

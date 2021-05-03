@@ -2,8 +2,14 @@ import numpy as np
 import mdtraj
 from pymbar import timeseries
 
-traj='output.dcd'
-top='chk_00.pdb'
+import argparse as ap
+parser = ap.ArgumentParser(description = 'Calculate box dimension statistics')
+parser.add_argument( '-traj', type=str, default='output.dcd', help = 'trajectory file')
+parser.add_argument( '-top', type=str, default='chk_00.pdb', help = 'topology file')
+args = parser.parse_args()
+
+traj=args.traj
+top=args.top
 t = mdtraj.load(traj,top=top)
 d = t.unitcell_lengths
 #d = np.loadtxt('boxdimensions.dat')
@@ -33,5 +39,10 @@ for ind in range(fulldata.shape[0]):
 
     summary[ind,:] = [avg,std,err,t0,g,Neff]
 
+print('rows: x,y,z, x*y,x*z,y*z, x*y*z\navg\tstd\terr \tt0 \tg_eq \tN_eff')
+print(summary)
 np.savetxt('box_stats.txt',summary,header='rows: x,y,z, x*y,x*z,y*z, x*y*z\navg\tstd\terr \tt0 \tg_eq \tN_eff')
+np.savetxt('box_lengths.txt',d)
+t[-1].save('lastframe.pdb')
+
 
